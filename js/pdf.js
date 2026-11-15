@@ -178,7 +178,7 @@
           pairs.push({ label: f.label, value: 'Not entered', missing: true });
           continue;
         }
-        const looked = meta && meta.src === 'lookup' && !meta.reviewed;
+        const looked = meta && meta.src === 'lookup' && !meta.reviewed && meta.suggested === undefined;
         pairs.push({ label: f.label, value: v + (looked ? ' (look-up, pending review)' : ''), wide: f.type === 'textarea' || String(v).length > 34, looked });
       }
       flushPairs();

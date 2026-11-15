@@ -44,7 +44,7 @@
       });
     }
     const meta = (u, f) => survey.meta[FS.metaKey(u.route, f)];
-    const isLook = (u, f) => { const m = meta(u, f); return m && m.src === 'lookup' && !m.reviewed; };
+    const isLook = (u, f) => { const m = meta(u, f); return m && m.src === 'lookup' && !m.reviewed && m.suggested === undefined; };
     const isMiss = (u, f) => missSet.has(FS.metaKey(u.route, f));
 
     function noteFor(u) {
@@ -304,8 +304,8 @@
       if (m.src !== 'lookup' || !labelOf[k]) continue;
       any = true;
       const L = labelOf[k];
-      const row = lu.addRow([L.unit, L.field, num(L.value) ?? L.value, m.source || '', m.url ? { text: 'Open', hyperlink: m.url } : '', m.confidence || '', m.reviewed ? 'Yes' : 'No']);
-      if (!m.reviewed) row.eachCell(c => { c.fill = FILL(C_LOOKUP); });
+      const row = lu.addRow([L.unit, L.field, m.suggested !== undefined ? `Kept field value ${L.value}; look-up found ${m.suggested}` : (num(L.value) ?? L.value), m.source || '', m.url ? { text: 'Open', hyperlink: m.url } : '', m.confidence || '', m.reviewed ? 'Yes' : 'No']);
+      if (!m.reviewed && m.suggested === undefined) row.eachCell(c => { c.fill = FILL(C_LOOKUP); });
     }
     if (!any) lu.addRow(['', '', '', 'No look-up values yet. Ask Claude to run the model/serial look-up after the survey is uploaded.']);
 

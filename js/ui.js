@@ -366,10 +366,8 @@
       else host.appendChild(renderField(s, f, obj, route, rerender));
     }
     if (lookups.length) {
-      const d = document.createElement('details'); d.className = 'lookupbox';
-      const anyMeta = lookups.some(f => s.meta[FS.metaKey(route, f.id)]);
-      if (anyMeta) d.open = true;
-      d.innerHTML = `<summary>Look-up info <span class="muted">— filled in after the visit from model/serial</span></summary>`;
+      const d = document.createElement('div'); d.className = 'lookupbox';
+      d.innerHTML = `<div class="lookuphead">Capacity &amp; airflow <span class="muted">— fill in if known. Blanks are looked up after the visit from model/serial; anything entered here is kept.</span></div>`;
       for (const f of lookups) d.appendChild(renderField(s, f, obj, route, rerender));
       host.appendChild(d);
     }
@@ -407,15 +405,26 @@
     const markMiss = () => w.classList.toggle('miss', MISSING_CHECK(f) && FS.isEmpty(obj[f.id]));
     const set = (v, rr) => {
       obj[f.id] = v;
-      if (meta && meta.src === 'lookup') { meta.edited = true; }
+      if (meta && meta.src === 'lookup' && !meta.suggested) { delete s.meta[mk]; }
       FS.save(); markMiss(); if (rr) rerender();
     };
     const label = `<label for="${id}">${esc(f.label)}</label>`;
     if (f.type === 'text' || f.type === 'number') {
-      const list = f.suggest ? `<datalist id="${id}_dl">${f.suggest.map(o => `<option value="${esc(o)}">`).join('')}</datalist>` : '';
-      w.innerHTML = `${label}<input id="${id}" type="text" ${f.type === 'number' ? 'inputmode="decimal"' : f.inputmode ? `inputmode="${f.inputmode}"` : ''} ${f.suggest ? `list="${id}_dl"` : ''} ${f.hint ? `placeholder="${esc(f.hint)}"` : ""} autocomplete="off" autocapitalize="${f.type === 'number' ? 'off' : 'characters'}" value="${esc(obj[f.id] || '')}">${list}`;
-      if (/model|serial|tag|label|name|curb/i.test(f.id) === false) w.querySelector('input').setAttribute('autocapitalize', 'sentences');
-      w.querySelector('input').addEventListener('input', e => set(e.target.value.trim() ? e.target.value : ''));
+      w.innerHTML = `${label}<input id="${id}" type="text" ${f.type === 'number' ? 'inputmode="decimal"' : f.inputmode ? `inputmode="${f.inputmode}"` : ''} ${f.hint ? `placeholder="${esc(f.hint)}"` : ""} autocomplete="off" autocorrect="off" autocapitalize="${f.type === 'number' ? 'off' : 'characters'}" value="${esc(obj[f.id] || '')}">` +
+        (f.suggest ? `<div class="sugg">${f.suggest.map(o => `<button type="button" class="chip small" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>` : '');
+      const inp = w.querySelector('input');
+      if (/model|serial|tag|label|name|curb/i.test(f.id) === false) inp.setAttribute('autocapitalize', 'sentences');
+      const mark = () => w.querySelectorAll('.sugg .chip').forEach(x => x.classList.toggle('on', x.dataset.v === inp.value));
+      inp.addEventListener('input', e => { set(e.target.value.trim() ? e.target.value : ''); mark(); });
+      const sg = w.querySelector('.sugg');
+      if (sg) {
+        mark();
+        sg.addEventListener('click', e => {
+          const b = e.target.closest('.chip'); if (!b) return;
+          inp.value = inp.value === b.dataset.v ? '' : b.dataset.v;
+          set(inp.value); mark();
+        });
+      }
     } else if (f.type === 'textarea') {
       w.innerHTML = `${label}<textarea id="${id}" autocapitalize="sentences">${esc(obj[f.id] || '')}</textarea>`;
       w.querySelector('textarea').addEventListener('input', e => set(e.target.value));
@@ -428,22 +437,45 @@
         w.querySelector('.psel').innerHTML = personSelect(st, obj[f.id] || '', id);
         bindPerson(w.querySelector('select'), v => set(v));
       });
-    } else if (f.type === 'choice' || f.type === 'yesno') {
+    } else if (f.type === 'choice' || f.type === 'yesno' || f.type === 'multi') {
       const opts = f.type === 'yesno' ? ['Yes', 'No'] : f.options;
-      w.innerHTML = `<div class="flabel">${esc(f.label)}</div><div class="chips">${opts.map(o => `<button type="button" class="chip ${obj[f.id] === o ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>`;
-      w.querySelector('.chips').addEventListener('click', e => {
+      const multi = f.type === 'multi';
+      const cur = () => multi ? String(obj[f.id] || '').split(/\s*,\s*/).filter(Boolean) : (obj[f.id] ? [obj[f.id]] : []);
+      const draw = () => {
+        const vals = cur();
+        const extra = vals.filter(v => !opts.includes(v));
+        w.innerHTML = `<div class="flabel">${esc(f.label)}${multi ? ' <span class="muted">(pick all that apply)</span>' : ''}</div><div class="chips">` +
+          [...opts, ...extra].map(o => `<button type="button" class="chip ${vals.includes(o) ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('') +
+          (f.noOther ? '' : `<button type="button" class="chip other" data-other="1">Other…</button>`) + `</div>`;
+        markMiss();
+      };
+      w.addEventListener('click', e => {
         const b = e.target.closest('.chip'); if (!b) return;
-        const v = obj[f.id] === b.dataset.v ? '' : b.dataset.v;
-        w.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x.dataset.v === v));
-        set(v, true);
+        let vals = cur();
+        if (b.dataset.other) {
+          const t = (prompt(`${f.label} – enter your answer:`) || '').trim();
+          if (!t) return;
+          vals = multi ? (vals.includes(t) ? vals : [...vals, t]) : [t];
+        } else {
+          const v = b.dataset.v;
+          vals = multi ? (vals.includes(v) ? vals.filter(x => x !== v) : [...vals, v]) : (vals[0] === v ? [] : [v]);
+        }
+        obj[f.id] = vals.join(', ');
+        draw();
+        set(obj[f.id], true);
       });
+      draw();
     } else if (f.type === 'check') {
       w.innerHTML = `<label class="checkrow"><input type="checkbox" id="${id}" ${obj[f.id] ? 'checked' : ''}> ${esc(f.label)}</label>`;
       w.querySelector('input').addEventListener('change', e => set(e.target.checked ? true : false, true));
     } else if (f.type === 'photo') {
       renderPhotoField(s, f, obj, w, set);
     }
-    if (meta && meta.src === 'lookup') {
+    if (meta && meta.src === 'lookup' && meta.suggested !== undefined) {
+      const note = document.createElement('div'); note.className = 'lookup-note';
+      note.innerHTML = `Look-up found <b>${esc(meta.suggested)}</b>${meta.source ? ` (${meta.url ? `<a href="${esc(meta.url)}" target="_blank">${esc(meta.source)}</a>` : esc(meta.source)})` : ''}. Your entry was kept.`;
+      w.appendChild(note);
+    } else if (meta && meta.src === 'lookup') {
       w.classList.toggle('looked', !meta.reviewed);
       const note = document.createElement('div'); note.className = 'lookup-note';
       note.innerHTML = meta.reviewed ? `✓ Look-up reviewed${meta.source ? ` · ${esc(meta.source)}` : ''}`
