@@ -410,17 +410,34 @@
     };
     const label = `<label for="${id}">${esc(f.label)}</label>`;
     if (f.type === 'text' || f.type === 'number') {
-      w.innerHTML = `${label}<input id="${id}" type="text" ${f.type === 'number' ? 'inputmode="decimal"' : f.inputmode ? `inputmode="${f.inputmode}"` : ''} ${f.hint ? `placeholder="${esc(f.hint)}"` : ""} autocomplete="off" autocorrect="off" autocapitalize="${f.type === 'number' ? 'off' : 'characters'}" value="${esc(obj[f.id] || '')}">` +
-        (f.suggest ? `<div class="sugg">${f.suggest.map(o => `<button type="button" class="chip small" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>` : '');
+      w.innerHTML = `${label}<input id="${id}" type="text" ${f.type === 'number' ? 'inputmode="decimal"' : f.format === 'mmyyyy' ? 'inputmode="numeric"' : f.inputmode ? `inputmode="${f.inputmode}"` : ''} ${f.hint ? `placeholder="${esc(f.hint)}"` : ""} autocomplete="off" autocorrect="off" autocapitalize="${f.type === 'number' ? 'off' : 'characters'}" value="${esc(obj[f.id] || '')}">` +
+        (f.suggest ? `<div class="sugg">${f.suggest.map(o => `<button type="button" class="chip small" data-v="${esc(o)}">${esc(o)}</button>`).join('')}<button type="button" class="chip small other" data-other="1">Other…</button></div>` : '');
       const inp = w.querySelector('input');
       if (/model|serial|tag|label|name|curb/i.test(f.id) === false) inp.setAttribute('autocapitalize', 'sentences');
       const mark = () => w.querySelectorAll('.sugg .chip').forEach(x => x.classList.toggle('on', x.dataset.v === inp.value));
+      if (f.format === 'mmyyyy') {
+        // number pad only has digits: put the "/" in for them (0519 -> 05/19, 052019 -> 05/2019)
+        const fmt = (raw, done) => {
+          const d = raw.replace(/\D/g, '').slice(0, 6);
+          if (done && d.length === 4 && +d.slice(0, 2) > 12) return d;          // just a year, e.g. 2019
+          return d.length > 2 ? d.slice(0, 2) + '/' + d.slice(2) : d;
+        };
+        inp.addEventListener('input', e => {
+          if (e.inputType && e.inputType.startsWith('delete')) { set(inp.value); return; }
+          inp.value = fmt(inp.value, false); set(inp.value);
+        });
+        inp.addEventListener('blur', () => { const v = fmt(inp.value, true); if (v !== inp.value) { inp.value = v; set(v); } });
+      } else
       inp.addEventListener('input', e => { set(e.target.value.trim() ? e.target.value : ''); mark(); });
       const sg = w.querySelector('.sugg');
       if (sg) {
         mark();
         sg.addEventListener('click', e => {
           const b = e.target.closest('.chip'); if (!b) return;
+          if (b.dataset.other) {
+            if (f.suggest.includes(inp.value)) { inp.value = ''; set(''); mark(); }
+            inp.placeholder = 'Type it here'; inp.focus(); return;
+          }
           inp.value = inp.value === b.dataset.v ? '' : b.dataset.v;
           set(inp.value); mark();
         });
@@ -438,7 +455,8 @@
         bindPerson(w.querySelector('select'), v => set(v));
       });
     } else if (f.type === 'choice' || f.type === 'yesno' || f.type === 'multi') {
-      const opts = f.type === 'yesno' ? ['Yes', 'No'] : f.options;
+      const opts = f.type === 'yesno' ? ['Yes', 'No']
+        : [...new Set([...(f.options || []), ...(f.optionsFrom ? f.optionsFrom(s.values) : [])])];
       const multi = f.type === 'multi';
       const cur = () => multi ? String(obj[f.id] || '').split(/\s*,\s*/).filter(Boolean) : (obj[f.id] ? [obj[f.id]] : []);
       const draw = () => {
@@ -446,7 +464,8 @@
         const extra = vals.filter(v => !opts.includes(v));
         w.innerHTML = `<div class="flabel">${esc(f.label)}${multi ? ' <span class="muted">(pick all that apply)</span>' : ''}</div><div class="chips">` +
           [...opts, ...extra].map(o => `<button type="button" class="chip ${vals.includes(o) ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('') +
-          (f.noOther ? '' : `<button type="button" class="chip other" data-other="1">Other…</button>`) + `</div>`;
+          (f.noOther ? '' : `<button type="button" class="chip other" data-other="1">Other…</button>`) + `</div>` +
+          (f.emptyHint && !opts.length && !extra.length ? `<div class="muted small">${esc(f.emptyHint)}</div>` : '');
         markMiss();
       };
       w.addEventListener('click', e => {

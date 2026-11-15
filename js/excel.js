@@ -186,6 +186,8 @@
     styleRange(ab, 5, 1, 6, 8, c => { c.font = { bold: true, size: 10 }; c.alignment = { horizontal: 'center', vertical: 'middle' }; c.border = BOX; c.fill = FILL(C_HEAD); });
 
     const inAB = u => u.it.category !== 'Remove & Cap';
+    const split = v => String(v || '').split(/\s*,\s*/).map(x => x.trim()).filter(x => x && !/^none$/i.test(x));
+    const links = h => ({ ef: split(h.it.efs || h.it.ef), mau: h.it.exhaustOnly === 'Yes' ? [] : split(h.it.maus) });
     const abRows = [];
     const rtuNote = u => {
       const it = u.it, p = [];
@@ -220,7 +222,10 @@
       const it = u.it, p = [];
       if (it.hoodType) p.push(it.hoodType);
       if (it.length) { const L = num(it.length); p.push(`Length: ${it.length}"${L ? ` (${+(L / 12).toFixed(1)} ft)` : ''}`); }
-      if (it.ef) p.push(it.ef + ' associated');
+      const lk = links(u);
+      if (lk.ef.length) p.push('Exhaust fan(s): ' + lk.ef.join(', '));
+      if (lk.mau.length) p.push('Makeup air unit(s): ' + lk.mau.join(', '));
+      if (!lk.ef.length && !lk.mau.length) p.push('NO FANS LINKED - VERIFY');
       if (it.equipment) p.push('Equip: ' + it.equipment);
       if (it.exhaustOnly === 'Yes') p.push('Exhaust only');
       if (it.dcv === 'Yes') p.push('Demand ventilation');
@@ -228,36 +233,41 @@
       return p.join('; ');
     };
     const efs = units.filter(u => u.kind === 'ef' && inAB(u));
-    const usedEf = new Set();
-    for (const u of units.filter(u => u.kind === 'rtu' && inAB(u))) abRows.push({ u, type: 'rtu' });
-    for (const h of units.filter(u => u.kind === 'hood' && inAB(u))) {
-      abRows.push({ u: h, type: 'hood' });
-      const tag = String(h.it.ef || '').trim().toUpperCase();
-      const ef = tag && efs.find(e => e.tag.trim().toUpperCase() === tag && !usedEf.has(e));
-      if (ef) { usedEf.add(ef); abRows.push({ u: ef, type: 'ef', hood: h }); }
-    }
-    for (const e of efs) if (!usedEf.has(e)) abRows.push({ u: e, type: 'ef' });
-
+    const rtus = units.filter(u => u.kind === 'rtu' && inAB(u));
+    const hoods = units.filter(u => u.kind === 'hood' && inAB(u));
+    const placed = new Map();                       // fan unit -> hood it is listed under
+    const key = t => String(t || '').trim().toUpperCase();
+    const groups = hoods.map(h => {
+      const lk = links(h), rows = [];
+      for (const [tags, pool] of [[lk.ef, efs], [lk.mau, rtus]]) for (const t of tags) {
+        const f = pool.find(x => key(x.tag) === key(t));
+        if (!f) continue;
+        if (placed.has(f)) { (f.alsoHoods = f.alsoHoods || []).push(h.tag); continue; }
+        placed.set(f, h); rows.push({ u: f, type: f.kind, hood: h });
+      }
+      return { h, rows };
+    });
+    for (const u of rtus) if (!placed.has(u)) abRows.push({ u, type: 'rtu' });
+    for (const g of groups) { abRows.push({ u: g.h, type: 'hood' }); abRows.push(...g.rows); }
+    for (const e of efs) if (!placed.has(e)) abRows.push({ u: e, type: 'ef' });
     let ar = 7;
     for (const row of abRows) {
       const u = row.u, it = u.it, ns = it.category === 'Not sure';
-      ab.getCell(ar, 1).value = u.tag;
+      ab.getCell(ar, 1).value = row.hood ? '   ' + u.tag : u.tag;
+      const hoodPre = row.hood ? `FOR ${row.hood.tag.toUpperCase()}${u.alsoHoods ? ' (ALSO SERVES ' + u.alsoHoods.join(', ').toUpperCase() + ')' : ''}. ` : '';
       if (row.type === 'rtu') {
         paint(ab, ar, 2, u, 'supplyCfm', num(it.supplyCfm));
         paint(ab, ar, 3, u, 'oaCfm', num(it.oaCfm));
         const tons = num(it.tons);
         if (tons != null) paint(ab, ar, 5, u, 'tons', tons);
         else if (num(it.supplyCfm) != null) ab.getCell(ar, 5).value = { formula: `B${ar}/400` };
-        ab.getCell(ar, 8).value = rtuNote(u);
+        ab.getCell(ar, 8).value = hoodPre + rtuNote(u);
       } else if (row.type === 'hood') {
-        paint(ab, ar, 3, u, 'makeupCfm', num(it.makeupCfm));
         ab.getCell(ar, 8).value = hoodNote(u);
       } else {
-        let cfm = num(it.cfm), lookField = 'cfm';
-        if (cfm == null && row.hood && num(row.hood.it.exhaustCfm) != null) { cfm = num(row.hood.it.exhaustCfm); lookField = null; }
-        const c = paint(ab, ar, 4, u, lookField, cfm == null ? null : -Math.abs(cfm));
-        if (!lookField && row.hood && isLook(row.hood, 'exhaustCfm')) c.fill = FILL(C_LOOKUP);
-        ab.getCell(ar, 8).value = efNote(u);
+        const cfm = num(it.cfm);
+        paint(ab, ar, 4, u, 'cfm', cfm == null ? null : -Math.abs(cfm));
+        ab.getCell(ar, 8).value = hoodPre + efNote(u);
       }
       ab.mergeCells(ar, 6, ar, 7);
       ab.getCell(ar, 6).value = (it.area || '').toUpperCase();
@@ -266,6 +276,7 @@
       ab.getCell(ar, 6).alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
       ['B', 'C', 'D'].forEach(L => { ab.getCell(`${L}${ar}`).numFmt = '#,##0'; });
       ab.getCell(`E${ar}`).numFmt = '0.0';
+      if (row.type === 'hood') { ab.getCell(ar, 1).font = { bold: true, size: 10 }; if (!ns) for (let k = 1; k <= 8; k++) ab.getCell(ar, k).fill = FILL('E7E6E6'); }
       ar++;
     }
     const last = Math.max(7, ar - 1);
@@ -278,7 +289,8 @@
     const abNotes = [
       'NO MECH. PLANS; TONNAGE AND CFM VALUES ARE ESTIMATED WHERE NOT SHOWN ON DATA PLATE.',
       'VALUES SHADED BLUE ARE FROM MANUFACTURER LOOK-UP BY MODEL/SERIAL AND ARE PENDING REVIEW (SEE LOOK-UP REVIEW TAB).',
-      'EXHAUST SHOWN AS NEGATIVE. MAKEUP COLUMN = RTU OUTSIDE AIR / HOOD MAKEUP AIR.',
+      'EXHAUST SHOWN AS NEGATIVE. MAKEUP COLUMN = UNIT OUTSIDE AIR CFM.',
+      'EACH HOOD (GRAY ROW) IS FOLLOWED BY ITS EXHAUST FAN(S) AND MAKEUP AIR UNIT(S); HOOD CFM IS CARRIED BY THOSE FANS.',
       'SPACE PRESSURIZATION = MAKEUP + EXHAUST (SUPPLY AIR IS RECIRCULATED AND NOT INCLUDED).',
       'EQUIPMENT MARKED REMOVE & CAP IS NOT INCLUDED. ROWS SHADED YELLOW ARE "NOT SURE" - VERIFY.',
     ];
