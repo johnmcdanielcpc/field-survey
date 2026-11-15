@@ -20,6 +20,8 @@
      noOther: true         no "Other…" button on this choice
      optional: true        never flagged as missing (notes, "if present" items)
      optionalIf: {field,in} not flagged as missing when another field matches
+     initial: value      filled in when the unit is added
+     missingIf: [values] these answers still count as not finished (e.g. "Not Identified")
      expect: true          photo field flagged if it has no photos
      optionsFrom: v=>[...]  extra buttons built from this survey (e.g. fan tags)
      format: 'mmyyyy'      number pad; the "/" is put in automatically
@@ -80,7 +82,7 @@ window.SURVEY_FORM = {
           { id: 'voltage', label: 'Voltage / Phase', type: 'choice', options: VOLTS },
           { id: 'mca', label: 'MCA', type: 'number' },
           { id: 'mocp', label: 'MOCP', type: 'number' },
-          PANEL,
+          { ...PANEL, options: ['Not Identified'], initial: 'Not Identified', missingIf: ['Not Identified'] },
           BREAKER,
           { id: 'controls', label: 'Controls Manufacturer', type: 'text', suggest: ['Danfoss', 'Copeland E3', 'CPC / Emerson', 'Novar', 'T-Stat', 'Unit controller'] },
           { id: 'vfd', label: 'VFD Present', type: 'yesno', hideIf: HEAT_ONLY },
