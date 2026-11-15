@@ -405,7 +405,7 @@
     const w = document.createElement('div'); w.className = 'field'; w.dataset.fid = f.id;
     const mk = FS.metaKey(route, f.id), meta = s.meta[mk];
     const id = 'f_' + route.replace(/\W/g, '_') + '_' + f.id;
-    const markMiss = () => w.classList.toggle('miss', MISSING_CHECK(f, obj) && FS.isEmpty(obj[f.id]));
+    const markMiss = () => w.classList.toggle('miss', MISSING_CHECK(f, obj) && FS.isUnfinished(f, obj[f.id]));
     const set = (v, rr) => {
       obj[f.id] = v;
       if (meta && meta.src === 'lookup' && !meta.suggested) { delete s.meta[mk]; }
@@ -497,7 +497,7 @@
         w.innerHTML = `<div class="flabel">${esc(f.label)}${multi ? ' <span class="muted">(pick all that apply)</span>' : ''}</div><div class="chips">` +
           [...opts, ...extra].map(o => `<button type="button" class="chip ${vals.includes(o) ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('') +
           (f.noOther ? '' : `<button type="button" class="chip other" data-other="1">Other…</button>`) + `</div>` +
-          (f.emptyHint && !opts.length && !extra.length ? `<div class="muted small">${esc(f.emptyHint)}</div>` : '');
+          (f.emptyHint && f.optionsFrom && !f.optionsFrom(s.values).length && !extra.length ? `<div class="muted small">${esc(f.emptyHint)}</div>` : '');
         markMiss();
       };
       w.addEventListener('click', e => {

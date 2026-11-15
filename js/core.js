@@ -39,6 +39,7 @@
   FS.newItem = function (def, arr) {
     const item = { _id: FS.uid() };
     initGroup(def.fields, item);
+    for (const f of def.fields) if (f.initial !== undefined && item[f.id] === undefined) item[f.id] = f.initial;
     if (def.labelPrefix && def.labelField) {
       // next number after the highest numeric suffix in use
       let n = arr.length;
@@ -49,6 +50,8 @@
   };
 
   FS.isEmpty = v => v == null || v === '' || (Array.isArray(v) && v.length === 0);
+  // blank, or a placeholder answer like "Not Identified" that still counts as not finished
+  FS.isUnfinished = (f, v) => FS.isEmpty(v) || !!(f.missingIf && f.missingIf.includes(v));
   FS.matches = (cond, obj) => cond.in.includes(obj[cond.field]);
   FS.isMedia = f => f.type === 'photo' || f.type === 'video';
   // fields never flagged as missing
@@ -115,7 +118,7 @@
     const out = [];
     FS.walk(survey, ({ sec, field, obj, route, labels }) => {
       if (FS.notChecked(field, obj)) return;
-      if (FS.isEmpty(obj[field.id])) out.push({ sec, field, route, labels, what: field.type === 'photo' ? `${field.label} (no photo)` : field.type === 'video' ? `${field.label} (no video)` : field.label });
+      if (FS.isUnfinished(field, obj[field.id])) out.push({ sec, field, route, labels, what: field.type === 'photo' ? `${field.label} (no photo)` : field.type === 'video' ? `${field.label} (no video)` : field.label });
     });
     return out;
   };
