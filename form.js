@@ -8,6 +8,8 @@
      choice   tap buttons (options) + Other… yesno   Yes / No (+ Other…)
      multi    pick several buttons + Other… (saved as "A, B")
      check    single checkbox                photo   any number of photos
+     video    one or more videos (uploaded to Drive with the photos)
+     info     a note shown to the technician (no answer)
      repeat   list of units (RTUs, fans...), each with its own fields
 
    Field keys
@@ -17,6 +19,7 @@
      hideIf: {field, in}   hide when another field in the same unit matches
      noOther: true         no "Other…" button on this choice
      optional: true        never flagged as missing (notes, "if present" items)
+     optionalIf: {field,in} not flagged as missing when another field matches
      expect: true          photo field flagged if it has no photos
      optionsFrom: v=>[...]  extra buttons built from this survey (e.g. fan tags)
      format: 'mmyyyy'      number pad; the "/" is put in automatically
@@ -33,11 +36,21 @@ const CATEGORY = { id: 'category', label: 'Category', type: 'choice', xl: 'categ
 const HEAT_ONLY = { field: 'heatOnly', in: [true] };
 // tags of units already entered in this survey (blank tag -> "Exhaust Fan 2" etc., same as the screens)
 const tagsIn = (sec, name) => v => ((v[sec] || {}).units || []).map((it, i) => String(it.tag || '').trim() || `${name} ${i + 1}`);
+// every panel in every electrical room, as "Panel (Room)" so same-named panels in two rooms stay distinct
+const PANELS = v => ((v.electrical || {}).rooms || []).flatMap((r, ri) => {
+  const room = String(r.name || '').trim() || `Electrical Room ${ri + 1}`;
+  return (r.panels || []).map((p, pi) => `${String(p.name || '').trim() || `Panel ${pi + 1}`} (${room})`);
+});
+const PANEL = { id: 'panel', label: 'Breaker Panel', type: 'choice', options: [], optionsFrom: PANELS,
+  emptyHint: 'No panels entered yet. Add them under Electrical Rooms and they will show here, or tap Other… to type the panel.' };
+const BREAKER = { id: 'breaker', label: 'Breaker Size (amps)', type: 'text', inputmode: 'numeric',
+  suggest: ['15', '20', '30', '40', '50', '60', '70', '80', '90', '100', '125', '150', '175', '200', '225'] };
+const NO_SCHED = { field: 'schedule', in: ['No'] };
 const RACKS = v => ((v.machine || {}).rooms || []).flatMap(r => (r.racks || []).map((k, i) => String(k.name || '').trim() || `Rack ${i + 1}`));
 
 window.SURVEY_FORM = {
   id: 'equipment-replacement-survey',
-  version: 3,
+  version: 4,
   title: 'Equipment Replacement Field Survey',
   sections: [
     {
@@ -67,6 +80,8 @@ window.SURVEY_FORM = {
           { id: 'voltage', label: 'Voltage / Phase', type: 'choice', options: VOLTS },
           { id: 'mca', label: 'MCA', type: 'number' },
           { id: 'mocp', label: 'MOCP', type: 'number' },
+          PANEL,
+          BREAKER,
           { id: 'controls', label: 'Controls Manufacturer', type: 'text', suggest: ['Danfoss', 'Copeland E3', 'CPC / Emerson', 'Novar', 'T-Stat', 'Unit controller'] },
           { id: 'vfd', label: 'VFD Present', type: 'yesno', hideIf: HEAT_ONLY },
           { id: 'smokeLoc', label: 'Smoke Detector Location', type: 'choice', options: ['In Unit', 'In Duct', 'None'] },
@@ -109,6 +124,8 @@ window.SURVEY_FORM = {
           { id: 'dataPlate', label: 'Data Plate', type: 'photo', expect: true, plate: true },
           { id: 'mfgDate', label: 'Manufacture Date (MM/YYYY)', type: 'text', format: 'mmyyyy', hint: 'MM/YYYY (or just the year)' },
           { id: 'voltage', label: 'Voltage / Phase', type: 'choice', options: VOLTS },
+          PANEL,
+          BREAKER,
           { id: 'curb', label: 'Curb Size (inches)', type: 'text' },
           { id: 'curbAdapter', label: 'Curb Adaptor Size (inches) if present', type: 'text', optional: true },
           { id: 'condition', label: 'Overall Condition of Unit', type: 'choice', options: COND },
@@ -145,13 +162,19 @@ window.SURVEY_FORM = {
       ]
     },
     {
-      id: 'electrical', title: 'Electrical Room', fields: [
-        { id: 'panels', type: 'repeat', itemName: 'Panel', addLabel: 'Add panel', labelField: 'name', fields: [
-          { id: 'name', label: 'Panel Name', type: 'text', suggest: ['480/3', '208/3', 'LG', 'MDP'] },
-          { id: 'dataPlate', label: 'Electrical Panel Data Plate', type: 'photo', expect: true, plate: true },
-          { id: 'spares', label: 'Electrical Panel Spare Spaces', type: 'text' },
-          { id: 'notes', label: 'Additional Notes', type: 'textarea', optional: true },
-          { id: 'other', label: 'Other', type: 'photo' },
+      id: 'electrical', title: 'Electrical Rooms', fields: [
+        { id: 'rooms', type: 'repeat', itemName: 'Electrical Room', addLabel: 'Add electrical room', labelField: 'name', labelPrefix: 'Electrical Room ', fields: [
+          { id: 'name', label: 'Room Name', type: 'text', suggest: ['Main Electrical Room', 'Back Room', 'Mezzanine', 'Compressor Room', 'Roof'] },
+          { id: 'location', label: 'Where is it? (how to find it)', type: 'text', hint: 'e.g. back of house behind receiving, up the mezzanine stairs' },
+          { id: 'panels', type: 'repeat', itemName: 'Panel', addLabel: 'Add panel', labelField: 'name', fields: [
+            { id: 'name', label: 'Panel Name', type: 'text', suggest: ['480/3', '208/3', 'LG', 'MDP'] },
+            { id: 'dataPlate', label: 'Electrical Panel Data Plate', type: 'photo', expect: true, plate: true },
+            { id: 'spares', label: 'Electrical Panel Spare Spaces', type: 'text' },
+            { id: 'notes', label: 'Additional Notes', type: 'textarea', optional: true },
+            { id: 'other', label: 'Other', type: 'photo' },
+          ]},
+          { id: 'notes', label: 'Room Notes', type: 'textarea', optional: true },
+          { id: 'photos', label: 'Room Photos', type: 'photo' },
         ]}
       ]
     },
@@ -171,7 +194,15 @@ window.SURVEY_FORM = {
           { id: 'sealed', label: 'Is Machine Room Sealed', type: 'yesno' },
           { id: 'racks', type: 'repeat', itemName: 'Rack', addLabel: 'Add rack', labelField: 'name', labelPrefix: 'Rack ', fields: [
             { id: 'name', label: 'Rack Name', type: 'text' },
+            { id: 'schedule', label: 'Refrigeration Schedule / Summary Available?', type: 'yesno' },
             { id: 'plate', label: 'Refrigeration Rack Data Plate & Refrigeration Summary', type: 'photo', expect: true, plate: true },
+            { id: 'thr', label: 'Compressor THR – Total Heat of Rejection (BTU/hr)', type: 'number', optionalIf: NO_SCHED,
+              hint: 'Type it from the refrigeration schedule' },
+            { id: 'noSchedule', type: 'info', showIf: NO_SCHED,
+              text: 'No refrigeration schedule: record the refrigerant and suction setpoint below, and take a photo of EVERY compressor data plate on this rack. THR will be worked out from those. If you know the THR, type it in above.' },
+            { id: 'refrigerant', label: 'Refrigerant', type: 'choice', options: ['R-404A', 'R-507', 'R-448A', 'R-449A', 'R-407A', 'R-22', 'R-744 (CO2)'], showIf: NO_SCHED },
+            { id: 'suction', label: 'Suction Setpoint (psig or °F)', type: 'text', showIf: NO_SCHED },
+            { id: 'compPlates', label: 'Compressor Data Plates (one photo per compressor)', type: 'photo', expect: true, plate: true, showIf: NO_SCHED },
             { id: 'notes', label: 'Rack Notes', type: 'textarea', optional: true },
           ]},
           { id: 'notes', label: 'Additional Notes', type: 'textarea', optional: true },
@@ -192,6 +223,8 @@ window.SURVEY_FORM = {
       id: 'final', title: 'Additional Notes & Photos', fields: [
         { id: 'notes', label: 'General Notes', type: 'textarea', optional: true },
         { id: 'roof', label: 'Roof Type and Equipment 360 View', type: 'photo', expect: true },
+        { id: 'roofVideo', label: 'Roof Layout Video', type: 'video', expect: true,
+          hint: 'Walk the roof slowly for about 1–2 minutes: every unit, the roof edges, and where the equipment sits relative to the store.' },
         { id: 'los', label: 'Noise / Line of Sight / Neighboring Properties', type: 'photo' },
         { id: 'items', type: 'repeat', itemName: 'Other Item', addLabel: 'Add other item', labelField: 'title', fields: [
           { id: 'title', label: 'Title (what is it?)', type: 'text' },
