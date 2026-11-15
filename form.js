@@ -29,6 +29,7 @@
                            shown in a collapsed section, never flagged on site
      plate: true           photo is a data plate / summary sheet (PDF prints it sharper)
      xl: '...'             key used by the Excel builder
+     measured: 'fieldId'   number field gets a "Field measured" checkbox next to it (saved in fieldId)
    ===================================================================== */
 
 const COND = ['Good', 'Fair', 'Poor'];
@@ -52,7 +53,7 @@ const RACKS = v => ((v.machine || {}).rooms || []).flatMap(r => (r.racks || []).
 
 window.SURVEY_FORM = {
   id: 'equipment-replacement-survey',
-  version: 4,
+  version: 5,
   title: 'Equipment Replacement Field Survey',
   sections: [
     {
@@ -70,7 +71,7 @@ window.SURVEY_FORM = {
     {
       id: 'rtus', title: 'RTUs / HVAC Units', fields: [
         { id: 'units', type: 'repeat', itemName: 'Unit', addLabel: 'Add unit', labelField: 'tag', labelPrefix: 'RTU-', kind: 'rtu', fields: [
-          { id: 'tag', label: 'Tag', type: 'text', hint: 'RTU-1, H-1, MAU-2…' },
+          { id: 'tag', label: 'Tag', type: 'text', hint: 'RTU-1, H-1…' },
           { id: 'area', label: 'Area Served', type: 'text', suggest: ['Sales floor', 'Produce', 'Bakery', 'Deli', 'Prepared foods', 'Break room', 'Vestibule', 'Offices', 'Pharmacy', 'Back room'] },
           CATEGORY,
           { id: 'heatOnly', label: 'Heat only (no cooling)', type: 'check', optional: true },
@@ -139,6 +140,38 @@ window.SURVEY_FORM = {
       ]
     },
     {
+      id: 'maus', title: 'Make-Up Air Units (MAU)', fields: [
+        { id: 'units', type: 'repeat', itemName: 'MAU', addLabel: 'Add MAU', labelField: 'tag', labelPrefix: 'MAU-', kind: 'mau', fields: [
+          { id: 'tag', label: 'MAU Unit Label', type: 'text', hint: 'MAU-1, MU-2…' },
+          { id: 'area', label: 'Area Served', type: 'text', suggest: ['Kitchen hood', 'Deli', 'Bakery', 'Prepared foods', 'Compressor room', 'Mechanical room', 'Back room'] },
+          CATEGORY,
+          { id: 'running', label: 'Running?', type: 'yesno' },
+          { id: 'mfr', label: 'Manufacturer', type: 'text', suggest: ['CaptiveAire', 'Greenheck', 'Loren Cook', 'Reznor', 'Accurex', 'Modine', 'Rupp', 'Trane'] },
+          { id: 'model', label: 'Model Number', type: 'text' },
+          { id: 'serial', label: 'Serial Number', type: 'text' },
+          { id: 'dataPlate', label: 'Data Plate', type: 'photo', expect: true, plate: true },
+          { id: 'mfgDate', label: 'Manufacture Date (MM/YYYY)', type: 'text', format: 'mmyyyy', hint: 'MM/YYYY (or just the year)' },
+          { id: 'voltage', label: 'Voltage / Phase', type: 'choice', options: VOLTS },
+          { ...PANEL, options: ['Not Identified'], initial: 'Not Identified', missingIf: ['Not Identified'] },
+          BREAKER,
+          { id: 'supplyCfm', label: 'Supply CFM (outside air into the building)', type: 'number', measured: 'cfmMeasured', hint: 'Measured at intake, or from the data plate' },
+          { id: 'filter', label: 'Filter Condition', type: 'choice', options: ['Good', 'Fair', 'Poor', 'Dirty', 'Missing'] },
+          { id: 'drive', label: 'Drive', type: 'choice', options: ['Belt', 'Direct'] },
+          { id: 'cooling', label: 'Cooling Present', type: 'choice', options: ['None', 'DX', 'Evaporative'] },
+          { id: 'heatType', label: 'Type of Heat', type: 'choice', options: ['Gas – direct-fired', 'Gas – indirect-fired', 'Electric', 'Hot Water', 'None'] },
+          { id: 'btuIn', label: 'Heating Input (BTU/hr)', type: 'number', showIf: { field: 'heatType', in: ['Gas – direct-fired', 'Gas – indirect-fired'] } },
+          { id: 'kw', label: 'Electric Heat (kW)', type: 'number', showIf: { field: 'heatType', in: ['Electric'] } },
+          { id: 'curb', label: 'Curb Size (inches)', type: 'text' },
+          { id: 'curbAdapter', label: 'Curb Adapter Size (inches) if present', type: 'text', optional: true },
+          { id: 'condition', label: 'Overall Condition of Unit', type: 'choice', options: COND },
+          { id: 'notes', label: 'Additional Notes', type: 'textarea', optional: true },
+          { id: 'sides', label: 'Unit All 4 Sides', type: 'photo', expect: true },
+          { id: 'other', label: 'Other', type: 'photo' },
+          { id: 'weight', label: 'Unit Weight (lbs)', type: 'number', lookup: true },
+        ]}
+      ]
+    },
+    {
       id: 'hoods', title: 'Hoods', fields: [
         { id: 'units', type: 'repeat', itemName: 'Hood', addLabel: 'Add hood', labelField: 'tag', labelPrefix: 'Hood ', kind: 'hood', fields: [
           { id: 'tag', label: 'Unit Label', type: 'text' },
@@ -155,9 +188,9 @@ window.SURVEY_FORM = {
           { id: 'exhaustOnly', label: 'Exhaust Only Hood', type: 'yesno' },
           { id: 'efs', label: 'Exhaust Fan(s) for this Hood', type: 'multi', options: [], optionsFrom: tagsIn('efs', 'Exhaust Fan'),
             emptyHint: 'No exhaust fans entered yet. Add them under Exhaust Fans and they will show here, or tap Other… to type the tag.' },
-          { id: 'maus', label: 'Makeup Air Unit(s) for this Hood', type: 'multi', options: [], optionsFrom: tagsIn('rtus', 'Unit'),
+          { id: 'maus', label: 'Makeup Air for this Hood (MAUs / RTUs)', type: 'multi', options: [], optionsFrom: v => [...tagsIn('maus', 'MAU')(v), ...tagsIn('rtus', 'Unit')(v)],
             hideIf: { field: 'exhaustOnly', in: ['Yes'] },
-            emptyHint: 'No units entered yet. MAUs are entered under RTUs / HVAC Units and will show here, or tap Other… to type the tag.' },
+            emptyHint: 'No MAUs or RTUs entered yet. Add them under Make-Up Air Units or RTUs and they will show here, or tap Other… to type the tag.' },
           { id: 'notes', label: 'Additional Notes', type: 'textarea', optional: true },
           { id: 'photo', label: 'Picture of Hood', type: 'photo', expect: true },
         ]}
