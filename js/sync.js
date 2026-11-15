@@ -84,7 +84,8 @@
     const recs = [];
     for (const pid of ids) { const r = await DB.get('photos', pid); if (r) recs.push(r); }
     const used = new Set(recs.map(r => r.driveName).filter(Boolean));
-    const todo = recs.filter(r => (!r.driveId && r.blob) || (r.marked && !r.markedDriveId));
+    const held = r => sy.holdVideos && r.kind === 'video';
+    const todo = recs.filter(r => (!r.driveId && r.blob && !held(r)) || (r.marked && !r.markedDriveId));
     const total = todo.length + 3;
     let done = 0;
     sy.progress = { done, total, label: 'Uploading photos' };
@@ -129,12 +130,14 @@
     sy.dataId = await uploadBlob(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }), sy.folderId, 'survey-data.json', true);
     done++;
 
+    sy.videosWaiting = recs.filter(r => r.kind === 'video' && !r.driveId && r.blob).length;
+    if (!sy.videosWaiting) sy.holdVideos = false;
     s.status = 'uploaded';
     sy.uploadedAt = s.updatedAt > sy.startedAt ? sy.startedAt : Math.max(Date.now(), s.updatedAt);
     sy.progress = null;
     await save(s);
     lastPaint = 0; paint(s);
-    FS.toast(`✓ ${FS.surveyTitle(s)} uploaded to Google Drive`, 4000);
+    FS.toast(`✓ ${FS.surveyTitle(s)} uploaded to Google Drive${sy.videosWaiting ? ` — ${sy.videosWaiting} video${sy.videosWaiting > 1 ? 's' : ''} still to send on Wi-Fi` : ''}`, 5000);
   }
 
   async function run(force) {

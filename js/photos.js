@@ -44,14 +44,14 @@
     return { blob: out, w, h, srcW: img.naturalWidth, srcH: img.naturalHeight };
   };
 
-  FS.addPhotos = async function (files, surveyId) {
+  FS.addPhotos = async function (files, surveyId, extra) {
     const ids = [];
     for (const file of files) {
       if (!file || !/^image\//.test(file.type || 'image/jpeg')) continue;
       const t = await FS.scaleToBlob(file, 420, 0.72);
       const rec = {
         id: FS.uid(), surveyId, blob: file.slice(0, file.size, file.type || 'image/jpeg'), thumb: t.blob,
-        w: t.srcW, h: t.srcH, size: file.size, takenAt: Date.now(), marked: null, markedThumb: null, strokes: null,
+        w: t.srcW, h: t.srcH, size: file.size, takenAt: Date.now(), marked: null, markedThumb: null, strokes: null, ...(extra || {}),
       };
       await DB.put('photos', rec);
       ids.push(rec.id);
@@ -70,13 +70,13 @@
     setTimeout(() => fin(null), 5000);
     v.src = url;
   });
-  FS.addVideos = async function (files, surveyId) {
+  FS.addVideos = async function (files, surveyId, extra) {
     const ids = [];
     for (const file of files) {
       if (!file || !/^video\//.test(file.type || 'video/quicktime')) continue;
       const type = file.type || 'video/quicktime';
       const rec = { id: FS.uid(), surveyId, kind: 'video', mime: type, blob: file.slice(0, file.size, type), thumb: null,
-        size: file.size, duration: await videoDuration(file), takenAt: Date.now(), marked: null, markedThumb: null, strokes: null };
+        size: file.size, duration: await videoDuration(file), takenAt: Date.now(), marked: null, markedThumb: null, strokes: null, ...(extra || {}) };
       await DB.put('photos', rec);
       ids.push(rec.id);
     }

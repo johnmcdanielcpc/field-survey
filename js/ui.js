@@ -44,6 +44,7 @@
     url: await DB.kvGet('uploadUrl', ''), key: await DB.kvGet('uploadKey', ''),
     names: await DB.kvGet('names', FS.DEFAULT_NAMES),
     me: await DB.kvGet('me', ''),
+    saveRoll: await FS.rollSetting(),
   });
 
   function setHeader(title, back) {
@@ -79,6 +80,7 @@
     };
     let [t, c] = map[s.status] || map.draft;
     if (s.status === 'uploaded' && s.updatedAt > (s.sync.uploadedAt || 0) + 2000) { t = 'Edited since upload'; c = 'warn'; }
+    else if (s.status === 'uploaded' && s.sync.videosWaiting) { t = 'Videos waiting'; c = 'warn'; }
     return `<span class="badge ${c}">${t}</span>`;
   }
 
@@ -125,7 +127,8 @@
       <h2>Surveys on this device</h2>
       ${all.length ? '' : '<p class="muted" style="margin:4px">No surveys yet.</p>'}
       <div id="list"></div>
-      <p style="margin-top:20px" class="muted center"><a href="#/drive">Open a survey from Google Drive</a> (for editing on a computer)</p>`;
+      <p style="margin-top:20px" class="muted center"><a href="#/drive">Open a survey from Google Drive</a> (for editing on a computer)</p>
+      <p class="muted center"><label class="linklike">Restore a survey from a backup file<input type="file" id="restoreIn" accept=".zip,application/zip" hidden></label></p>`;
     const list = $('#list');
     for (const s of all) {
       const miss = FS.missingList(s).length;
@@ -147,6 +150,16 @@
     };
     bindPerson($('#meSel'), async v => { await DB.kvSet('me', v); FS.toast(`Surveying as ${v}`); });
     const sn = $('#syncNow'); if (sn) sn.onclick = () => FS.Sync.run(true);
+    $('#restoreIn').onchange = async e => {
+      const file = e.target.files[0]; e.target.value = '';
+      if (!file) return;
+      try {
+        FS.busy('Reading backup…');
+        const id = await FS.restoreBackup(file, (a, b) => FS.busy(`Restoring photos & videos ${a} of ${b}…`));
+        FS.busy(false);
+        if (id) { FS.toast('✓ Survey restored from backup', 4000); location.hash = `#/s/${id}`; }
+      } catch (err) { FS.busy(false); alert('Could not restore: ' + err.message); }
+    };
   }
 
   function personSelect(st, value, id) {
@@ -184,16 +197,30 @@
       banner = `<div class="banner bad"><b>Upload problem:</b> ${esc(sy.lastError || '')}<br><button class="btn" id="retry" style="margin-top:8px">Try again</button></div>`;
     } else if (s.status === 'uploaded') {
       const edited = s.updatedAt > (sy.uploadedAt || 0) + 2000;
-      banner = edited
+      if (sy.videosWaiting) banner += `<div class="banner warn"><b>${sy.videosWaiting} video${sy.videosWaiting > 1 ? 's' : ''} not uploaded yet.</b> ${sy.videosWaiting > 1 ? "They're" : "It's"} safe on this phone. Send ${sy.videosWaiting > 1 ? 'them' : 'it'} when you're on Wi-Fi.
+        <button class="btn primary" id="sendVid" style="margin-top:8px">Send videos now</button></div>`;
+      banner += edited
         ? `<div class="banner warn">Changed since it was uploaded. <button class="btn" id="reup" style="margin-top:8px">Re-upload changes</button></div>`
         : `<div class="banner ok"><b>✓ Uploaded to Google Drive</b> ${FS.fmtDateTime(sy.uploadedAt)}${sy.folderUrl ? ` · <a href="${esc(sy.folderUrl)}" target="_blank">Open folder</a>` : ''}</div>`;
     }
     view.innerHTML = `${banner}
       ${unreviewed ? `<div class="banner lookup"><b>${unreviewed} look-up value${unreviewed > 1 ? 's' : ''} need your review.</b> They're shaded blue on the unit screens.</div>` : ''}
       <div id="secs"></div>
-      <h2>Save a copy (optional)</h2>
+      <h2>Extra copies (work with no signal)</h2>
       <div class="card">
-        <div class="muted" style="margin-bottom:10px">You don't need these. <b>Finish &amp; Upload</b> puts the PDF and Excel in Google Drive for you. These buttons make a copy on this phone and open the iPhone share screen, where you can tap <b>Save to Files</b>, email it, or AirDrop it.</div>
+        <div class="flabel">Backup file</div>
+        <div class="muted" style="margin-bottom:8px">One file with everything: the survey, all full-size photos and videos. Save it to <b>Files → On My iPhone</b> before you leave the site. It stays safe even if the app is removed, opens on a laptop (it's a .zip), and can be restored into the app on any phone.</div>
+        <div class="muted small" id="bkInfo"></div>
+        <button class="btn primary block" id="bkBtn">Make backup file…</button>
+      </div>
+      <div class="card" id="rollCard" hidden>
+        <div class="flabel">iPhone Photos app</div>
+        <div class="muted" style="margin-bottom:8px" id="rollInfo"></div>
+        <button class="btn block" id="rollBtn">Save to Photos</button>
+      </div>
+      <div class="card">
+        <div class="flabel">PDF and Excel</div>
+        <div class="muted" style="margin-bottom:10px">Not needed — <b>Finish &amp; Upload</b> puts these in Google Drive. These make a copy now and open the share screen (Save to Files, email…).</div>
         <div class="btnrow">
           <button class="btn" id="pdfBtn">Share / save PDF…</button>
           <button class="btn" id="xlBtn">Share / save Excel…</button>
@@ -224,6 +251,54 @@
     $('#finBtn').onclick = () => finish(s);
     const rt = $('#retry'); if (rt) rt.onclick = () => { s.status = 'queued'; FS.save(true).then(() => FS.Sync.run(true)); };
     const ru = $('#reup'); if (ru) ru.onclick = () => finish(s);
+    const sv = $('#sendVid'); if (sv) sv.onclick = async () => {
+      s.sync.holdVideos = false; s.status = 'queued'; s.sync.queuedAt = Date.now(); s.sync.lastError = '';
+      await DB.put('surveys', s);
+      FS.toast(navigator.onLine ? 'Sending videos…' : 'Saved to outbox. Videos will send when you have signal.');
+      FS.updateNet(); route(); FS.Sync.run(true);
+    };
+    if (s.sync.backupAt) $('#bkInfo').textContent = `Last backup file made ${FS.fmtDateTime(s.sync.backupAt)}${s.updatedAt > s.sync.backupAt + 2000 ? ' — survey has changed since then' : ''}.`;
+    $('#bkBtn').onclick = async () => {
+      let blob;
+      try {
+        FS.busy('Making backup file…');
+        blob = await FS.buildBackup(s, (a, b) => FS.busy(`Making backup file… ${Math.round(100 * a / (b || 1))}%`));
+        FS.busy(false);
+      } catch (e) { FS.busy(false); alert('Backup failed: ' + e.message); return; }
+      const name = FS.backupName(s);
+      const sh = FS.sheet(`<div class="flabel">Backup file ready</div>
+        <div class="muted">${esc(name)}<br>${FS.fmtBytes(blob.size)}</div>
+        <p>Tap <b>Save</b>, then pick <b>Save to Files</b> → <b>On My iPhone</b>. To get it onto your laptop later, save it to Google Drive or OneDrive from the same screen once you have signal.</p>
+        <div class="btnrow"><button class="btn" data-a="x">Cancel</button><button class="btn primary" data-a="go">Save…</button></div>`);
+      sh.addEventListener('click', e => {
+        const a = e.target.closest('[data-a]'); if (!a) return;
+        if (a.dataset.a === 'x') return sh.close();
+        const file = new File([blob], name, { type: 'application/zip' });
+        const after = () => { s.sync.backupAt = Date.now(); DB.put('surveys', s).then(() => route()); };
+        sh.close();
+        if (navigator.canShare && navigator.canShare({ files: [file] }) && /iPhone|iPad|Android/i.test(navigator.userAgent)) {
+          navigator.share({ files: [file], title: name }).then(after).catch(err => { if (err.name !== 'AbortError') alert('Could not open the share screen: ' + err.message); });
+        } else { FS.deliverFile(blob, name); after(); }
+      });
+    };
+    (async () => {
+      if (!(await FS.rollSetting())) return;
+      const all = FS.photoIds(s);
+      let pend = await FS.rollPending(all);
+      const card = $('#rollCard'); if (!card) return;
+      const draw = () => {
+        card.hidden = false;
+        const nP = pend.filter(r => r.kind !== 'video').length, nV = pend.length - nP;
+        $('#rollInfo').textContent = pend.length
+          ? `${[nP ? `${nP} photo${nP > 1 ? 's' : ''}` : '', nV ? `${nV} video${nV > 1 ? 's' : ''}` : ''].filter(Boolean).join(' and ')} not saved to Photos yet. Each tap opens the share screen — tap Save Image (or Save Video). Up to 10 photos at a time.`
+          : '✓ Everything is saved to the Photos app.';
+        const b = $('#rollBtn'); b.hidden = !pend.length;
+        const batch = FS.rollBatch(pend);
+        b.textContent = batch.length ? `Save ${batch.length === 1 && batch[0].kind === 'video' ? 'next video' : `${batch.length} photo${batch.length > 1 ? 's' : ''}`} to Photos${pend.length > batch.length ? ` (${pend.length} left)` : ''}` : '';
+        b.onclick = () => { const bt = FS.rollBatch(pend); FS.saveRecsToPhotos(bt).then(ok => { if (ok) { pend = pend.filter(r => !bt.includes(r)); draw(); } }); };
+      };
+      draw();
+    })();
     $('#pdfBtn').onclick = async () => {
       try { FS.busy('Building PDF…'); const b = await FS.buildPDF(s, { onProgress: t => FS.busy(t) }); FS.busy(false); FS.deliverFile(b, FS.fileBase(s) + '.pdf'); }
       catch (e) { FS.busy(false); alert('PDF failed: ' + e.message); }
@@ -255,6 +330,24 @@
     }
     const st = await FS.settings();
     if (!st.url) { alert('Uploads are not set up on this device yet. Open Settings (the gear) and paste the setup link you were sent.'); return; }
+    const vids = (await DB.photosFor(s.id)).filter(r => r.kind === 'video' && r.blob && !r.driveId);
+    let hold = false;
+    if (vids.length) {
+      const size = vids.reduce((a, r) => a + (r.blob.size || 0), 0);
+      hold = await new Promise(res => {
+        const sh = FS.sheet(`<div class="flabel">Upload videos now?</div>
+          <p class="muted">This survey has ${vids.length} video${vids.length > 1 ? 's' : ''} (${FS.fmtBytes(size)}) that ${vids.length > 1 ? "haven't" : "hasn't"} been uploaded. Videos are big and slow on cell signal. You can send everything else now and the videos later on Wi-Fi — they stay safe on this phone.</p>
+          <button class="btn primary block" data-a="all">Upload everything</button>
+          <button class="btn block" data-a="hold" style="margin-top:8px">Upload now, videos later</button>
+          <button class="btn block" data-a="x" style="margin-top:8px">Cancel</button>`);
+        sh.addEventListener('click', e => {
+          const a = e.target.closest('[data-a]'); if (!a) { if (e.target === sh) res(null); return; }
+          sh.close(); res(a.dataset.a === 'x' ? null : a.dataset.a === 'hold');
+        });
+      });
+      if (hold === null) return;
+    }
+    s.sync.holdVideos = hold;
     s.status = 'queued'; s.sync.queuedAt = Date.now(); s.sync.lastError = '';
     await FS.save(true);
     FS.toast(navigator.onLine ? 'Uploading…' : 'Saved to outbox. It will upload when you have signal.');
@@ -550,9 +643,10 @@
       <div class="photos"></div>
       <div class="addphoto">
         <label class="btn"><input type="file" accept="image/*" capture="environment">📷 Take photo</label>
-        <label class="btn"><input type="file" accept="image/*" multiple>🖼 Library</label>
-      </div>`;
+        <label class="btn"><input type="file" accept="image/*" multiple data-lib="1">🖼 Library</label>
+      </div><div class="rollrow"></div>`;
     const grid = w.querySelector('.photos');
+    rollButton(ids, w.querySelector('.rollrow'));
     ids.forEach(async (pid, i) => {
       const t = document.createElement('div'); t.className = 'thumb';
       t.innerHTML = `<img alt=""><span>${i + 1}</span>`;
@@ -572,13 +666,27 @@
       if (!files.length) return;
       FS.busy(`Saving ${files.length} photo${files.length > 1 ? 's' : ''}…`);
       try {
-        const newIds = await FS.addPhotos(files, s.id);
+        const newIds = await FS.addPhotos(files, s.id, inp.dataset.lib ? { inRoll: true } : null);
         obj[f.id] = [...(obj[f.id] || []), ...newIds];
         set(obj[f.id]); await FS.save(true);
       } catch (e) { alert('Could not save photo: ' + e.message + (e.name === 'QuotaExceededError' ? '\nThe phone may be out of storage.' : '')); }
       FS.busy(false);
       redraw();
     }));
+  }
+
+  /* "Save to Photos" under a photo/video field when the setting is on and some aren't saved yet.
+     Records are loaded first so the tap can open the share screen straight away (iPhone requires that). */
+  async function rollButton(ids, host) {
+    if (!ids.length || !(await FS.rollSetting())) return;
+    let pend = await FS.rollPending(ids);
+    const draw = () => {
+      if (!pend.length) { host.innerHTML = ids.length ? '<div class="muted small">✓ Saved to Photos</div>' : ''; return; }
+      const bt = FS.rollBatch(pend);
+      host.innerHTML = `<button type="button" class="btn small">📥 Save ${bt.length === 1 && bt[0].kind === 'video' ? 'video' : bt.length + ' photo' + (bt.length > 1 ? 's' : '')} to Photos${pend.length > bt.length ? ` (${pend.length} left)` : ''}</button>`;
+      host.querySelector('button').onclick = () => FS.saveRecsToPhotos(bt).then(ok => { if (ok) { pend = pend.filter(r => !bt.includes(r)); draw(); } });
+    };
+    draw();
   }
 
   function renderVideoField(s, f, obj, w, set) {
@@ -588,9 +696,10 @@
       <div class="videos"></div>
       <div class="addphoto">
         <label class="btn"><input type="file" accept="video/*" capture="environment">🎥 Record video</label>
-        <label class="btn"><input type="file" accept="video/*" multiple>🖼 Library</label>
-      </div>`;
+        <label class="btn"><input type="file" accept="video/*" multiple data-lib="1">🖼 Library</label>
+      </div><div class="rollrow"></div>`;
     const list = w.querySelector('.videos');
+    rollButton(ids, w.querySelector('.rollrow'));
     ids.forEach(async (vid, i) => {
       const row = document.createElement('div'); row.className = 'vrow';
       row.innerHTML = `<button type="button" class="btn small" data-a="play">▶ Video ${i + 1}</button><span class="muted"></span><button type="button" class="btn small danger" data-a="del">Delete</button>`;
@@ -612,7 +721,7 @@
       if (!files.length) return;
       FS.busy('Saving video…');
       try {
-        const newIds = await FS.addVideos(files, s.id);
+        const newIds = await FS.addVideos(files, s.id, inp.dataset.lib ? { inRoll: true } : null);
         obj[f.id] = [...(obj[f.id] || []), ...newIds];
         set(obj[f.id]); await FS.save(true);
       } catch (e) { alert('Could not save video: ' + e.message + (e.name === 'QuotaExceededError' ? '\nThe phone may be out of storage.' : '')); }
@@ -648,6 +757,11 @@
         <div id="testOut" class="muted" style="margin-top:8px"></div>
       </div>
       <div class="card">
+        <div class="flabel">iPhone Photos app</div>
+        <label class="checkrow"><input type="checkbox" id="rollSet" ${st.saveRoll ? 'checked' : ''}> Offer to save survey photos &amp; videos to the Photos app</label>
+        <p class="muted" style="margin:6px 0 0">An extra backup copy. A "Save to Photos" button shows under photos that aren't saved yet; tap it, then tap Save Image. Photos picked from the Library are already in Photos and are skipped. Plug the phone into a Windows laptop with a cable and the laptop can copy them off.</p>
+      </div>
+      <div class="card">
         <div class="flabel">Set up another phone</div>
         <p class="muted">Copy this link and text it to a tech. When they open it in Safari, it fills in the upload settings and names. Then they tap Share → Add to Home Screen.</p>
         <button class="btn block" id="copyLink">Copy setup link</button>
@@ -655,6 +769,7 @@
       <div class="card"><div class="flabel">Storage</div><div class="muted">${esc(est)}</div>
         <div class="muted" style="margin-top:6px">App version ${esc(FS.VERSION)}</div>
         <button class="btn block" id="upd" style="margin-top:8px">Check for app update</button></div>`;
+    $('#rollSet').onchange = async e => { await DB.kvSet('saveToPhotos', e.target.checked); FS.toast(e.target.checked ? 'Save to Photos is on' : 'Save to Photos is off'); };
     $('#applySetup').onclick = async () => {
       const v = $('#setupPaste').value.trim();
       const m = v.match(/#setup=([A-Za-z0-9_\-+/=]+)/);

@@ -174,7 +174,7 @@
             const info = [FS.fmtDuration(rec && rec.duration), rec && rec.size ? FS.fmtBytes(rec.size) : ''].filter(Boolean).join(', ');
             const linked = opts.links && rec && rec.driveId;
             doc.setTextColor(...(linked ? [17, 85, 204] : [20, 20, 20]));
-            const line = `Video ${i + 1}${info ? ` (${info})` : ''}${linked ? ' - tap to play in Google Drive' : ''}`;
+            const line = `Video ${i + 1}${info ? ` (${info})` : ''}${linked ? ' - tap to play in Google Drive' : opts.links && rec && !rec.driveId ? ' - not uploaded yet (sent later on Wi-Fi)' : ''}`;
             doc.text(t(line), M + indent + 8, y + 9);
             if (linked) doc.link(M + indent + 8, y, doc.getTextWidth(t(line)), 12, { url: `https://drive.google.com/file/d/${rec.driveId}/view` });
             y += 14;
