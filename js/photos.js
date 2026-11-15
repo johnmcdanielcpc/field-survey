@@ -59,6 +59,44 @@
     return ids;
   };
 
+  /* Videos are kept full size in the same store as photos and uploaded the same way (in pieces). */
+  const videoDuration = file => new Promise(resolve => {
+    const v = document.createElement('video'); let done = false;
+    const url = URL.createObjectURL(file);
+    const fin = d => { if (done) return; done = true; URL.revokeObjectURL(url); resolve(d); };
+    v.preload = 'metadata'; v.muted = true;
+    v.onloadedmetadata = () => fin(isFinite(v.duration) ? v.duration : null);
+    v.onerror = () => fin(null);
+    setTimeout(() => fin(null), 5000);
+    v.src = url;
+  });
+  FS.addVideos = async function (files, surveyId) {
+    const ids = [];
+    for (const file of files) {
+      if (!file || !/^video\//.test(file.type || 'video/quicktime')) continue;
+      const type = file.type || 'video/quicktime';
+      const rec = { id: FS.uid(), surveyId, kind: 'video', mime: type, blob: file.slice(0, file.size, type), thumb: null,
+        size: file.size, duration: await videoDuration(file), takenAt: Date.now(), marked: null, markedThumb: null, strokes: null };
+      await DB.put('photos', rec);
+      ids.push(rec.id);
+    }
+    return ids;
+  };
+  FS.fmtDuration = d => d ? `${Math.floor(d / 60)}:${String(Math.round(d % 60)).padStart(2, '0')}` : '';
+  FS.mediaExt = rec => rec && rec.kind === 'video' ? (/mp4/.test(rec.mime || '') ? '.mp4' : '.mov') : '.jpg';
+  FS.playVideo = async function (rec, title) {
+    if (!rec) return;
+    if (!rec.blob && rec.driveId) { window.open(`https://drive.google.com/file/d/${rec.driveId}/view`, '_blank'); return; }
+    const el = document.createElement('div'); el.className = 'viewer';
+    el.innerHTML = `<div class="cap"></div><div class="vimg"><video controls playsinline style="max-width:100%;max-height:100%"></video></div>
+      <div class="vbar"><button class="btn primary" data-a="close">Done</button></div>`;
+    el.querySelector('.cap').textContent = title;
+    document.body.appendChild(el);
+    const url = URL.createObjectURL(rec.blob);
+    el.querySelector('video').src = url;
+    el.querySelector('[data-a=close]').onclick = () => { URL.revokeObjectURL(url); el.remove(); };
+  };
+
   FS.getPhoto = id => DB.get('photos', id);
 
   /* Full-resolution blob. For surveys opened from Drive on a computer, fetch the original on demand. */

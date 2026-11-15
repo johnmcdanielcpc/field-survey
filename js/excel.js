@@ -55,6 +55,7 @@
       if (it.running === 'No') out.push('Not running');
       if (it.condition) out.push('Condition: ' + it.condition);
       if (it.disconnect) out.push('Disconnect: ' + it.disconnect);
+      if (it.panel || it.breaker) out.push(`Breaker: ${it.breaker ? String(it.breaker).replace(/\s*a(mps?)?$/i, '') + 'A' : 'size ?'}${it.panel ? ' in panel ' + it.panel : ''}`);
       if (it.notes) out.push(it.notes.replace(/\s*\n\s*/g, '; '));
       return out.join('; ');
     }
@@ -218,6 +219,11 @@
       if (it.category) p.push('Category: ' + it.category);
       return p.join('; ');
     };
+    const hoodService = it => {
+      const L = num(it.length);
+      const size = L ? `${+(L / 12).toFixed(1)} FT (${it.length}")` : it.length ? `${it.length}"` : 'LENGTH ?';
+      return [(it.area || '').toUpperCase(), `${(it.hoodType || 'TYPE ?').toUpperCase()} HOOD, ${size}`].filter(Boolean).join(' – ');
+    };
     const hoodNote = u => {
       const it = u.it, p = [];
       if (it.hoodType) p.push(it.hoodType);
@@ -270,7 +276,7 @@
         ab.getCell(ar, 8).value = hoodPre + efNote(u);
       }
       ab.mergeCells(ar, 6, ar, 7);
-      ab.getCell(ar, 6).value = (it.area || '').toUpperCase();
+      ab.getCell(ar, 6).value = row.type === 'hood' ? hoodService(it) : (it.area || '').toUpperCase();
       rowBorders(ab, ar, 8, ns);
       ab.getCell(ar, 8).alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
       ab.getCell(ar, 6).alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
@@ -296,6 +302,41 @@
     ];
     ab.getCell(ar + 3, 1).value = 'Note:'; ab.getCell(ar + 3, 1).font = { bold: true };
     abNotes.forEach((n, k) => { ab.getCell(ar + 4 + k, 1).value = `${k + 1}.  ${n}`; });
+
+    /* --------- REFRIGERATION (one row per rack: THR is what we need from each) */
+    const rf = wb.addWorksheet('REFRIGERATION', { pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
+    rf.columns = [22, 14, 12, 14, 18, 16, 12, 50, 14].map(w => ({ width: w }));
+    rf.getCell('A1').value = 'Project:'; rf.getCell('B1').value = project; rf.getCell('B1').font = { bold: true };
+    const rfH = ['Machine Room', 'Rack', 'Schedule?', 'Refrigerant', 'Suction Setpoint', 'THR (BTU/hr)', 'THR (MBH)', 'Notes', 'Photos'];
+    rfH.forEach((h, k) => { const c = rf.getCell(3, k + 1); c.value = h; c.font = { bold: true, size: 10 }; c.border = BOX; c.fill = FILL(C_HEAD); c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; });
+    let rr = 4;
+    const mdef = FS.section('machine').fields[0], rdef = mdef.fields.find(f => f.id === 'racks');
+    (survey.values.machine.rooms || []).forEach((room, i) => {
+      (room.racks || []).forEach((rk, j) => {
+        const route = `machine/rooms/${room._id}/racks/${rk._id}`;
+        const pic = [...(rk.plate || []), ...(rk.compPlates || [])].find(id => photoDrive[id]);
+        const thr = num(rk.thr);
+        const vals = [FS.itemLabel(mdef, room, i), FS.itemLabel(rdef, rk, j), rk.schedule || '', rk.refrigerant || '', rk.suction || '', thr, null,
+          [rk.schedule === 'No' ? `No schedule - ${(rk.compPlates || []).length} compressor plate photo(s)` : '', (rk.notes || '').replace(/\s*\n\s*/g, '; ')].filter(Boolean).join('; '), ''];
+        vals.forEach((v, k) => { rf.getCell(rr, k + 1).value = v; });
+        if (thr != null) rf.getCell(rr, 7).value = { formula: `F${rr}/1000` };
+        if (pic) rf.getCell(rr, 9).value = { text: 'Open', hyperlink: driveUrl(photoDrive[pic]) };
+        else if (survey.sync.folderUrl) rf.getCell(rr, 9).value = { text: 'Folder', hyperlink: survey.sync.folderUrl };
+        for (let k = 1; k <= 9; k++) { const c = rf.getCell(rr, k); c.border = BOX; c.alignment = { vertical: 'top', wrapText: true, horizontal: k <= 2 || k === 8 ? 'left' : 'center' }; c.font = { size: 10 }; }
+        rf.getCell(rr, 6).numFmt = '#,##0'; rf.getCell(rr, 7).numFmt = '#,##0.0';
+        if (thr == null) rf.getCell(rr, 6).fill = FILL(C_MISSING);
+        if (rf.getCell(rr, 9).value && rf.getCell(rr, 9).value.hyperlink) rf.getCell(rr, 9).font = { size: 10, color: { argb: 'FF1155CC' }, underline: true };
+        rr++;
+      });
+    });
+    if (rr === 4) { rf.getCell(4, 1).value = 'No racks recorded'; rr++; }
+    else {
+      rf.getCell(rr, 5).value = 'TOTAL THR:'; rf.getCell(rr, 5).font = { bold: true };
+      rf.getCell(rr, 6).value = { formula: `SUM(F4:F${rr - 1})` }; rf.getCell(rr, 6).numFmt = '#,##0'; rf.getCell(rr, 6).font = { bold: true };
+      rf.getCell(rr, 7).value = { formula: `F${rr}/1000` }; rf.getCell(rr, 7).numFmt = '#,##0.0'; rf.getCell(rr, 7).font = { bold: true };
+      rr++;
+    }
+    rf.getCell(rr + 1, 1).value = 'Racks with no refrigeration schedule: THR to be worked out from the compressor data plates, refrigerant and suction setpoint. THR cells shaded orange are blank.';
 
     /* --------- MISSING INFO */
     const mi = wb.addWorksheet('MISSING INFO');

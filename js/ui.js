@@ -350,7 +350,7 @@
     }
   }
 
-  const MISSING_CHECK = f => !(f.optional || f.lookup || f.type === 'check' || (f.type === 'photo' && !f.expect));
+  const MISSING_CHECK = (f, obj) => !FS.notChecked(f, obj);
 
   function renderFields(s, fields, obj, route, host, missBy) {
     host.innerHTML = '';
@@ -402,7 +402,7 @@
     const w = document.createElement('div'); w.className = 'field'; w.dataset.fid = f.id;
     const mk = FS.metaKey(route, f.id), meta = s.meta[mk];
     const id = 'f_' + route.replace(/\W/g, '_') + '_' + f.id;
-    const markMiss = () => w.classList.toggle('miss', MISSING_CHECK(f) && FS.isEmpty(obj[f.id]));
+    const markMiss = () => w.classList.toggle('miss', MISSING_CHECK(f, obj) && FS.isEmpty(obj[f.id]));
     const set = (v, rr) => {
       obj[f.id] = v;
       if (meta && meta.src === 'lookup' && !meta.suggested) { delete s.meta[mk]; }
@@ -518,6 +518,11 @@
       w.querySelector('input').addEventListener('change', e => set(e.target.checked ? true : false, true));
     } else if (f.type === 'photo') {
       renderPhotoField(s, f, obj, w, set);
+    } else if (f.type === 'video') {
+      renderVideoField(s, f, obj, w, set);
+    } else if (f.type === 'info') {
+      w.classList.add('info');
+      w.innerHTML = `<div class="infobox">ℹ️ ${esc(f.text)}</div>`;
     }
     if (meta && meta.src === 'lookup' && meta.suggested !== undefined) {
       const note = document.createElement('div'); note.className = 'lookup-note';
@@ -568,6 +573,46 @@
         obj[f.id] = [...(obj[f.id] || []), ...newIds];
         set(obj[f.id]); await FS.save(true);
       } catch (e) { alert('Could not save photo: ' + e.message + (e.name === 'QuotaExceededError' ? '\nThe phone may be out of storage.' : '')); }
+      FS.busy(false);
+      redraw();
+    }));
+  }
+
+  function renderVideoField(s, f, obj, w, set) {
+    const ids = obj[f.id] || [];
+    w.innerHTML = `<div class="flabel">${esc(f.label)} <span class="muted">(${ids.length})</span></div>
+      ${f.hint ? `<div class="muted">${esc(f.hint)}</div>` : ''}
+      <div class="videos"></div>
+      <div class="addphoto">
+        <label class="btn"><input type="file" accept="video/*" capture="environment">🎥 Record video</label>
+        <label class="btn"><input type="file" accept="video/*" multiple>🖼 Library</label>
+      </div>`;
+    const list = w.querySelector('.videos');
+    ids.forEach(async (vid, i) => {
+      const row = document.createElement('div'); row.className = 'vrow';
+      row.innerHTML = `<button type="button" class="btn small" data-a="play">▶ Video ${i + 1}</button><span class="muted"></span><button type="button" class="btn small danger" data-a="del">Delete</button>`;
+      list.appendChild(row);
+      const rec = await FS.getPhoto(vid);
+      row.querySelector('span').textContent = rec ? [FS.fmtDuration(rec.duration), rec.size ? FS.fmtBytes(rec.size) : '', rec.driveId ? 'in Drive' : ''].filter(Boolean).join(' · ') : 'missing';
+      row.addEventListener('click', async e => {
+        const a = e.target.closest('[data-a]'); if (!a) return;
+        if (a.dataset.a === 'play') FS.playVideo(rec, `${f.label} – Video ${i + 1}`);
+        if (a.dataset.a === 'del') {
+          if (!confirm('Delete this video?')) return;
+          obj[f.id] = (obj[f.id] || []).filter(x => x !== vid); await DB.del('photos', vid); set(obj[f.id]); redraw();
+        }
+      });
+    });
+    const redraw = () => { const nw = document.createElement('div'); nw.className = w.className; nw.dataset.fid = w.dataset.fid; renderVideoField(s, f, obj, nw, set); w.replaceWith(nw); };
+    w.querySelectorAll('input[type=file]').forEach(inp => inp.addEventListener('change', async () => {
+      const files = [...inp.files]; inp.value = '';
+      if (!files.length) return;
+      FS.busy('Saving video…');
+      try {
+        const newIds = await FS.addVideos(files, s.id);
+        obj[f.id] = [...(obj[f.id] || []), ...newIds];
+        set(obj[f.id]); await FS.save(true);
+      } catch (e) { alert('Could not save video: ' + e.message + (e.name === 'QuotaExceededError' ? '\nThe phone may be out of storage.' : '')); }
       FS.busy(false);
       redraw();
     }));

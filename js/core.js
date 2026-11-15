@@ -16,6 +16,12 @@
   }
   FS.normalize = function (survey) {
     survey.values = survey.values || {};
+    // older surveys had one electrical room with a flat list of panels
+    const el = survey.values.electrical;
+    if (el && Array.isArray(el.panels) && !Array.isArray(el.rooms)) {
+      el.rooms = el.panels.length ? [{ _id: FS.uid(), name: 'Electrical Room 1', location: '', panels: el.panels }] : [];
+      delete el.panels;
+    }
     for (const s of F.sections) survey.values[s.id] = initGroup(s.fields, survey.values[s.id] || {});
     survey.meta = survey.meta || {};
     survey.sync = survey.sync || {};
@@ -44,6 +50,10 @@
 
   FS.isEmpty = v => v == null || v === '' || (Array.isArray(v) && v.length === 0);
   FS.matches = (cond, obj) => cond.in.includes(obj[cond.field]);
+  FS.isMedia = f => f.type === 'photo' || f.type === 'video';
+  // fields never flagged as missing
+  FS.notChecked = (f, obj) => !!(f.optional || f.lookup || f.type === 'check' || f.type === 'info'
+    || (FS.isMedia(f) && !f.expect) || (f.optionalIf && obj && FS.matches(f.optionalIf, obj)));
   FS.visible = (f, obj) => {
     if (f.showIf && !FS.matches(f.showIf, obj)) return false;
     if (f.hideIf && FS.matches(f.hideIf, obj)) return false;
@@ -99,10 +109,8 @@
   FS.missingList = function (survey) {
     const out = [];
     FS.walk(survey, ({ sec, field, obj, route, labels }) => {
-      if (field.optional || field.lookup) return;
-      if (field.type === 'check') return;
-      if (field.type === 'photo' && !field.expect) return;
-      if (FS.isEmpty(obj[field.id])) out.push({ sec, field, route, labels, what: field.type === 'photo' ? `${field.label} (no photo)` : field.label });
+      if (FS.notChecked(field, obj)) return;
+      if (FS.isEmpty(obj[field.id])) out.push({ sec, field, route, labels, what: field.type === 'photo' ? `${field.label} (no photo)` : field.type === 'video' ? `${field.label} (no video)` : field.label });
     });
     return out;
   };
@@ -118,7 +126,7 @@
 
   FS.photoIds = function (survey) {
     const ids = [];
-    FS.walk(survey, ({ field, obj }) => { if (field.type === 'photo') ids.push(...(obj[field.id] || [])); });
+    FS.walk(survey, ({ field, obj }) => { if (FS.isMedia(field)) ids.push(...(obj[field.id] || [])); });
     return ids;
   };
   FS.photoCount = function (fields, obj) {
@@ -163,9 +171,9 @@
   FS.photoContexts = function (survey) {
     const ctx = {};
     FS.walk(survey, ({ sec, field, obj, labels }) => {
-      if (field.type !== 'photo') return;
+      if (!FS.isMedia(field)) return;
       const base = labels.length ? labels.join(' – ') : sec.title;
-      (obj[field.id] || []).forEach((pid, i) => { ctx[pid] = { base: `${base} – ${field.label}`, n: i + 1, plate: !!field.plate }; });
+      (obj[field.id] || []).forEach((pid, i) => { ctx[pid] = { base: `${base} – ${field.label}`, n: i + 1, plate: !!field.plate, video: field.type === 'video' }; });
     });
     return ctx;
   };

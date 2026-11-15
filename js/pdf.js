@@ -15,7 +15,7 @@
     const doc = new jsPDF({ unit: 'pt', format: 'letter', compress: true });
     const site = survey.values.site;
     const ctxs = FS.photoContexts(survey);
-    const allPhotos = Object.keys(ctxs).length;
+    const allPhotos = Object.values(ctxs).filter(c => !c.video).length;
     let photoDone = 0;
     let y = TOP;
 
@@ -161,6 +161,28 @@
           }
           continue;
         }
+        if (f.type === 'info') continue;
+        if (f.type === 'video') {
+          const ids = obj[f.id] || [];
+          if (!ids.length) { if (f.expect) pairs.push({ label: f.label, value: 'No video', missing: true }); continue; }
+          flushPairs();
+          need(14 + ids.length * 14);
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...GRAY);
+          doc.text(t(`${f.label} (${ids.length} video${ids.length === 1 ? '' : 's'})`), M + indent, y + 9); y += 14;
+          doc.setFont('helvetica', 'normal');
+          for (let i = 0; i < ids.length; i++) {
+            const rec = await FS.getPhoto(ids[i]);
+            const info = [FS.fmtDuration(rec && rec.duration), rec && rec.size ? FS.fmtBytes(rec.size) : ''].filter(Boolean).join(', ');
+            const linked = opts.links && rec && rec.driveId;
+            doc.setTextColor(...(linked ? [17, 85, 204] : [20, 20, 20]));
+            const line = `Video ${i + 1}${info ? ` (${info})` : ''}${linked ? ' - tap to play in Google Drive' : ''}`;
+            doc.text(t(line), M + indent + 8, y + 9);
+            if (linked) doc.link(M + indent + 8, y, doc.getTextWidth(t(line)), 12, { url: `https://drive.google.com/file/d/${rec.driveId}/view` });
+            y += 14;
+          }
+          doc.setTextColor(0); y += 4;
+          continue;
+        }
         if (f.type === 'photo') {
           const ids = obj[f.id] || [];
           if (!ids.length) {
@@ -174,7 +196,7 @@
         const v = valueOf(f, obj, route);
         const meta = survey.meta[FS.metaKey(route, f.id)];
         if (FS.isEmpty(v)) {
-          if (f.optional || f.lookup || f.type === 'check') continue;
+          if (FS.notChecked(f, obj) && f.type !== 'photo') continue;
           pairs.push({ label: f.label, value: 'Not entered', missing: true });
           continue;
         }

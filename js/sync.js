@@ -92,18 +92,20 @@
       if (!r.driveId) {
         if (!r.driveName) {
           const c = ctx[r.id] || { base: 'Photo', n: 1 };
-          let name = FS.safeName(`${c.base} – ${c.n}`) + '.jpg', k = 2;
-          while (used.has(name)) name = FS.safeName(`${c.base} – ${c.n} (${k++})`) + '.jpg';
+          const ext = FS.mediaExt(r);
+          let name = FS.safeName(`${c.base} – ${c.n}`) + ext, k = 2;
+          while (used.has(name)) name = FS.safeName(`${c.base} – ${c.n} (${k++})`) + ext;
           used.add(name); r.driveName = name;
         }
-        r.driveId = await uploadBlob(r.blob, sy.photosFolderId, r.driveName, false);
+        r.driveId = await uploadBlob(r.blob, sy.photosFolderId, r.driveName, false, r.kind === 'video'
+          ? (a, b) => { sy.progress.label = `Uploading video ${FS.fmtBytes(a)} of ${FS.fmtBytes(b)}`; paint(s); } : null);
         await DB.put('photos', r);
       }
       if (r.marked && !r.markedDriveId) {
         r.markedDriveId = await uploadBlob(r.marked, sy.photosFolderId, r.driveName.replace(/\.jpg$/i, '') + ' (marked).jpg', true);
         await DB.put('photos', r);
       }
-      done++; sy.progress = { done, total, label: `Uploading photos (${done} of ${todo.length})` };
+      done++; sy.progress = { done, total, label: `Uploading photos & video (${done} of ${todo.length})` };
       await save(s); paint(s);
     }
 
@@ -122,7 +124,7 @@
 
     // 5. survey data (so it can be opened and edited on a computer, and for the look-up step)
     const photoMeta = [];
-    for (const r of await DB.photosFor(s.id)) photoMeta.push({ id: r.id, driveId: r.driveId, markedDriveId: r.markedDriveId || null, driveName: r.driveName, w: r.w, h: r.h, takenAt: r.takenAt, strokes: r.strokes || null });
+    for (const r of await DB.photosFor(s.id)) photoMeta.push({ id: r.id, kind: r.kind || 'photo', mime: r.mime || null, size: r.size || null, duration: r.duration || null, driveId: r.driveId, markedDriveId: r.markedDriveId || null, driveName: r.driveName, w: r.w, h: r.h, takenAt: r.takenAt, strokes: r.strokes || null });
     const data = { app: 'field-survey', version: 1, survey: { ...s, status: 'uploaded' }, photos: photoMeta, uploadedAt: new Date().toISOString() };
     sy.dataId = await uploadBlob(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }), sy.folderId, 'survey-data.json', true);
     done++;
@@ -172,7 +174,7 @@
     for (const p of data.photos || []) {
       const ex = await DB.get('photos', p.id);
       const rec = ex || { id: p.id, surveyId: s.id, blob: null, thumb: null, marked: null, markedThumb: null };
-      Object.assign(rec, { driveId: p.driveId, markedDriveId: p.markedDriveId, driveName: p.driveName, w: p.w, h: p.h, takenAt: p.takenAt, strokes: p.strokes });
+      Object.assign(rec, { kind: p.kind || 'photo', mime: p.mime || null, size: p.size || rec.size, duration: p.duration || null, driveId: p.driveId, markedDriveId: p.markedDriveId, driveName: p.driveName, w: p.w, h: p.h, takenAt: p.takenAt, strokes: p.strokes });
       if (p.markedDriveId && !rec.marked) { rec.marked = null; }
       await DB.put('photos', rec);
     }
