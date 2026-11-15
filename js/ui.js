@@ -409,7 +409,7 @@
       FS.save(); markMiss(); if (rr) rerender();
     };
     const label = `<label for="${id}">${esc(f.label)}</label>`;
-    if (f.type === 'text' || f.type === 'number') {
+    if ((f.type === 'text' && f.format !== 'mmyyyy') || f.type === 'number') {
       w.innerHTML = `${label}<input id="${id}" type="text" ${f.type === 'number' ? 'inputmode="decimal"' : f.format === 'mmyyyy' ? 'inputmode="numeric"' : f.inputmode ? `inputmode="${f.inputmode}"` : ''} ${f.hint ? `placeholder="${esc(f.hint)}"` : ""} autocomplete="off" autocorrect="off" autocapitalize="${f.type === 'number' ? 'off' : 'characters'}" value="${esc(obj[f.id] || '')}">` +
         (f.suggest ? `<div class="sugg">${f.suggest.map(o => `<button type="button" class="chip small" data-v="${esc(o)}">${esc(o)}</button>`).join('')}<button type="button" class="chip small other" data-other="1">Other…</button></div>` : '');
       const inp = w.querySelector('input');
@@ -442,6 +442,35 @@
           set(inp.value); mark();
         });
       }
+    } else if (f.type === 'text' && f.format === 'mmyyyy') {
+      // two iPhone wheels: month (or "—" for year only) and year (this year back to 1970, Other… for older)
+      const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const now = new Date().getFullYear();
+      const parse = v => { const m = String(v || '').match(/^\s*(?:(\d{1,2})\s*[\/\-.]\s*)?(\d{4})\s*$/); return m ? { mm: m[1] ? +m[1] : 0, yy: +m[2] } : null; };
+      const draw = () => {
+        const v = obj[f.id] || '', p = parse(v);
+        const years = []; for (let y = now; y >= 1970; y--) years.push(y);
+        if (p && !years.includes(p.yy)) years.push(p.yy);
+        w.innerHTML = `${label}<div class="mmyy">
+          <select class="mm" aria-label="Month"><option value="0">— month —</option>${MONTHS.map((m, i) => `<option value="${i + 1}" ${p && p.mm === i + 1 ? 'selected' : ''}>${String(i + 1).padStart(2, '0')} ${m}</option>`).join('')}</select>
+          <select class="yy" id="${id}" aria-label="Year"><option value="">— year —</option>${years.map(y => `<option ${p && p.yy === y ? 'selected' : ''}>${y}</option>`).join('')}<option value="other">Other…</option></select>
+          ${v ? '<button type="button" class="chip small clr">Clear</button>' : ''}</div>` +
+          (v && !p ? `<div class="muted">Entered: ${esc(v)}</div>` : '');
+        markMiss();
+      };
+      const save = () => {
+        const mm = +w.querySelector('.mm').value, ysel = w.querySelector('.yy');
+        let yy = ysel.value;
+        if (yy === 'other') {
+          yy = (prompt('Year (4 digits, e.g. 1968):') || '').trim();
+          if (!/^\d{4}$/.test(yy)) { draw(); return; }
+        }
+        set(yy ? (mm ? String(mm).padStart(2, '0') + '/' : '') + yy : '');
+        draw();
+      };
+      w.addEventListener('change', e => { if (e.target.tagName === 'SELECT') save(); });
+      w.addEventListener('click', e => { if (e.target.closest('.clr')) { set(''); draw(); } });
+      draw();
     } else if (f.type === 'textarea') {
       w.innerHTML = `${label}<textarea id="${id}" autocapitalize="sentences">${esc(obj[f.id] || '')}</textarea>`;
       w.querySelector('textarea').addEventListener('input', e => set(e.target.value));
