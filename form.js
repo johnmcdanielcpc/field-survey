@@ -18,6 +18,8 @@
      noOther: true         no "Other…" button on this choice
      optional: true        never flagged as missing (notes, "if present" items)
      expect: true          photo field flagged if it has no photos
+     optionsFrom: v=>[...]  extra buttons built from this survey (e.g. fan tags)
+     format: 'mmyyyy'      number pad; the "/" is put in automatically
      lookup: true          filled in after the visit (model/serial look-up);
                            shown in a collapsed section, never flagged on site
      plate: true           photo is a data plate / summary sheet (PDF prints it sharper)
@@ -29,10 +31,13 @@ const VOLTS = ['115/1', '208/1', '208/3', '230/1', '230/3', '460/3', '480/3', '5
 const CATEGORY = { id: 'category', label: 'Category', type: 'choice', xl: 'category', noOther: true,   // fixed list: it decides the spreadsheet tab
   options: ['Replace', 'Existing to Remain', 'Remove & Cap', 'Not sure'] };
 const HEAT_ONLY = { field: 'heatOnly', in: [true] };
+// tags of units already entered in this survey (blank tag -> "Exhaust Fan 2" etc., same as the screens)
+const tagsIn = (sec, name) => v => ((v[sec] || {}).units || []).map((it, i) => String(it.tag || '').trim() || `${name} ${i + 1}`);
+const RACKS = v => ((v.machine || {}).rooms || []).flatMap(r => (r.racks || []).map((k, i) => String(k.name || '').trim() || `Rack ${i + 1}`));
 
 window.SURVEY_FORM = {
   id: 'equipment-replacement-survey',
-  version: 2,
+  version: 3,
   title: 'Equipment Replacement Field Survey',
   sections: [
     {
@@ -56,7 +61,7 @@ window.SURVEY_FORM = {
           { id: 'model', label: 'Model Number', type: 'text' },
           { id: 'serial', label: 'Serial Number', type: 'text' },
           { id: 'dataPlate', label: 'Data Plate', type: 'photo', expect: true, plate: true },
-          { id: 'mfgDate', label: 'Mfg Date (MM/YYYY)', type: 'text', inputmode: 'numeric' },
+          { id: 'mfgDate', label: 'Mfg Date (MM/YYYY)', type: 'text', format: 'mmyyyy', hint: 'MM/YYYY (or just the year)' },
           { id: 'voltage', label: 'Voltage / Phase', type: 'choice', options: VOLTS },
           { id: 'mca', label: 'MCA', type: 'number' },
           { id: 'mocp', label: 'MOCP', type: 'number' },
@@ -65,7 +70,7 @@ window.SURVEY_FORM = {
           { id: 'smokeLoc', label: 'Smoke Detector Location', type: 'choice', options: ['In Unit', 'In Duct', 'None'] },
           { id: 'refrigerant', label: 'Refrigerant', type: 'choice', options: ['R-22', 'R-407C', 'R-410A', 'R-422B', 'R-454B', 'R-32'], hideIf: HEAT_ONLY },
           { id: 'coil', label: 'Condition of Condenser Coil', type: 'choice', options: COND, hideIf: HEAT_ONLY },
-          { id: 'reclaim', label: 'Heat Reclaim', type: 'text', suggest: ['None Present', 'Rack A', 'Rack B', 'Rack C', 'Rack D', 'Rack E'], hideIf: HEAT_ONLY },
+          { id: 'reclaim', label: 'Heat Reclaim (racks / circuits)', type: 'multi', options: ['None Present', 'Rack A', 'Rack B', 'Rack C', 'Rack D', 'Rack E'], optionsFrom: RACKS, hideIf: HEAT_ONLY },
           { id: 'hgrh', label: 'Hot Gas Reheat', type: 'yesno', hideIf: HEAT_ONLY },
           { id: 'heatPump', label: 'Heat Pump', type: 'yesno', hideIf: HEAT_ONLY },
           { id: 'heatType', label: 'Type of Heat', type: 'choice', options: ['Gas', 'Electric', 'Hot Water', 'None'] },
@@ -100,7 +105,7 @@ window.SURVEY_FORM = {
           { id: 'model', label: 'Model Number', type: 'text' },
           { id: 'serial', label: 'Serial Number', type: 'text' },
           { id: 'dataPlate', label: 'Data Plate', type: 'photo', expect: true, plate: true },
-          { id: 'mfgDate', label: 'Manufacture Date (MM/YYYY)', type: 'text', inputmode: 'numeric' },
+          { id: 'mfgDate', label: 'Manufacture Date (MM/YYYY)', type: 'text', format: 'mmyyyy', hint: 'MM/YYYY (or just the year)' },
           { id: 'voltage', label: 'Voltage / Phase', type: 'choice', options: VOLTS },
           { id: 'curb', label: 'Curb Size (inches)', type: 'text' },
           { id: 'curbAdapter', label: 'Curb Adaptor Size (inches) if present', type: 'text', optional: true },
@@ -127,11 +132,13 @@ window.SURVEY_FORM = {
           { id: 'fits', label: 'Does Equipment Fit Under Hood', type: 'yesno' },
           { id: 'equipment', label: 'Type of Equipment Under Hood', type: 'multi', options: ['Fryers', 'Oven', 'Rotisserie', 'Griddle', 'Range', 'Pizza oven', 'Smoker', 'Steamer', 'Dishwasher'] },
           { id: 'exhaustOnly', label: 'Exhaust Only Hood', type: 'yesno' },
-          { id: 'ef', label: 'Associated Exhaust Fan (tag)', type: 'text' },
+          { id: 'efs', label: 'Exhaust Fan(s) for this Hood', type: 'multi', options: [], optionsFrom: tagsIn('efs', 'Exhaust Fan'),
+            emptyHint: 'No exhaust fans entered yet. Add them under Exhaust Fans and they will show here, or tap Other… to type the tag.' },
+          { id: 'maus', label: 'Makeup Air Unit(s) for this Hood', type: 'multi', options: [], optionsFrom: tagsIn('rtus', 'Unit'),
+            hideIf: { field: 'exhaustOnly', in: ['Yes'] },
+            emptyHint: 'No units entered yet. MAUs are entered under RTUs / HVAC Units and will show here, or tap Other… to type the tag.' },
           { id: 'notes', label: 'Additional Notes', type: 'textarea', optional: true },
           { id: 'photo', label: 'Picture of Hood', type: 'photo', expect: true },
-          { id: 'exhaustCfm', label: 'Hood Exhaust CFM (if known)', type: 'number', optional: true },
-          { id: 'makeupCfm', label: 'Hood Makeup CFM (if known)', type: 'number', optional: true },
         ]}
       ]
     },
