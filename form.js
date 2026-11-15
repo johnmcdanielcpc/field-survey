@@ -173,6 +173,8 @@ window.SURVEY_FORM = {
             { id: 'notes', label: 'Additional Notes', type: 'textarea', optional: true },
             { id: 'other', label: 'Other', type: 'photo' },
           ]},
+          { id: 'video', label: 'Electrical Room Video', type: 'video', expect: true,
+            hint: 'Walk the room slowly and record EVERY panel: open each panel door so the breakers and the panel schedule show clearly, and say the panel name out loud as you film it.' },
           { id: 'notes', label: 'Room Notes', type: 'textarea', optional: true },
           { id: 'photos', label: 'Room Photos', type: 'photo' },
         ]}
