@@ -1,8 +1,8 @@
 /* Offline: keep the whole app on the device. Bump VERSION when files change. */
-const VERSION = 'field-survey-1.0.10';
+const VERSION = 'field-survey-1.0.11';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png',
-  './form.js', './js/db.js', './js/core.js', './js/photos.js', './js/ui.js', './js/pdf.js', './js/excel.js', './js/sync.js', './js/app.js',
+  './form.js', './js/db.js', './js/core.js', './js/photos.js', './js/backup.js', './js/ui.js', './js/pdf.js', './js/excel.js', './js/sync.js', './js/app.js',
   './lib/jspdf.umd.min.js', './lib/exceljs.min.js',
 ];
 self.addEventListener('install', e => {

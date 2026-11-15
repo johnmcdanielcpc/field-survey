@@ -164,6 +164,12 @@
   .toast.update { display: flex; gap: 10px; align-items: center; bottom: calc(env(safe-area-inset-bottom) + 140px); }
   .name-row { padding: 6px 0; border-bottom: 1px solid var(--line); }
   @media (min-width: 700px) { main { padding-left: 20px; padding-right: 20px; } .photos { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); } }
+.sheetwrap{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:#fff;width:100%;max-width:560px;border-radius:16px 16px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
+.sheet p{margin:10px 0}
+.linklike{color:#1155cc;text-decoration:underline;cursor:pointer}
+.rollrow{margin-top:6px}
+.muted.small,.small.muted{font-size:13px}
 </style>
 </head>
 <body>
@@ -182,6 +188,7 @@
 <script src="js/db.js"></script>
 <script src="js/core.js"></script>
 <script src="js/photos.js"></script>
+<script src="js/backup.js"></script>
 <script src="js/pdf.js"></script>
 <script src="js/excel.js"></script>
 <script src="js/sync.js"></script>
