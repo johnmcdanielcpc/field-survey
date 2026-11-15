@@ -5,7 +5,8 @@
 
    Field types
      text | number | textarea | date | person
-     choice   tap buttons (options)          yesno   Yes / No
+     choice   tap buttons (options) + Other… yesno   Yes / No (+ Other…)
+     multi    pick several buttons + Other… (saved as "A, B")
      check    single checkbox                photo   any number of photos
      repeat   list of units (RTUs, fans...), each with its own fields
 
@@ -14,6 +15,7 @@
      options: [...]        buttons (choice)
      showIf: {field, in}   only show when another field in the same unit matches
      hideIf: {field, in}   hide when another field in the same unit matches
+     noOther: true         no "Other…" button on this choice
      optional: true        never flagged as missing (notes, "if present" items)
      expect: true          photo field flagged if it has no photos
      lookup: true          filled in after the visit (model/serial look-up);
@@ -24,7 +26,7 @@
 
 const COND = ['Good', 'Fair', 'Poor'];
 const VOLTS = ['115/1', '208/1', '208/3', '230/1', '230/3', '460/3', '480/3', '575/3'];
-const CATEGORY = { id: 'category', label: 'Category', type: 'choice', xl: 'category',
+const CATEGORY = { id: 'category', label: 'Category', type: 'choice', xl: 'category', noOther: true,   // fixed list: it decides the spreadsheet tab
   options: ['Replace', 'Existing to Remain', 'Remove & Cap', 'Not sure'] };
 const HEAT_ONLY = { field: 'heatOnly', in: [true] };
 
@@ -61,7 +63,7 @@ window.SURVEY_FORM = {
           { id: 'controls', label: 'Controls Manufacturer', type: 'text', suggest: ['Danfoss', 'Copeland E3', 'CPC / Emerson', 'Novar', 'T-Stat', 'Unit controller'] },
           { id: 'vfd', label: 'VFD Present', type: 'yesno', hideIf: HEAT_ONLY },
           { id: 'smokeLoc', label: 'Smoke Detector Location', type: 'choice', options: ['In Unit', 'In Duct', 'None'] },
-          { id: 'refrigerant', label: 'Refrigerant', type: 'choice', options: ['R-22', 'R-407C', 'R-410A', 'R-422B', 'R-454B', 'R-32', 'Other'], hideIf: HEAT_ONLY },
+          { id: 'refrigerant', label: 'Refrigerant', type: 'choice', options: ['R-22', 'R-407C', 'R-410A', 'R-422B', 'R-454B', 'R-32'], hideIf: HEAT_ONLY },
           { id: 'coil', label: 'Condition of Condenser Coil', type: 'choice', options: COND, hideIf: HEAT_ONLY },
           { id: 'reclaim', label: 'Heat Reclaim', type: 'text', suggest: ['None Present', 'Rack A', 'Rack B', 'Rack C', 'Rack D', 'Rack E'], hideIf: HEAT_ONLY },
           { id: 'hgrh', label: 'Hot Gas Reheat', type: 'yesno', hideIf: HEAT_ONLY },
@@ -105,8 +107,8 @@ window.SURVEY_FORM = {
           { id: 'condition', label: 'Overall Condition of Unit', type: 'choice', options: COND },
           { id: 'notes', label: 'Additional Notes', type: 'textarea', optional: true },
           { id: 'sides', label: 'Picture of Fan All 4 Sides', type: 'photo', expect: true },
-          { id: 'cfm', label: 'Exhaust CFM', type: 'number', lookup: true },
-          { id: 'weight', label: 'Unit Weight (lbs)', type: 'number', lookup: true },
+          { id: 'cfm', label: 'Exhaust CFM (if known)', type: 'number', optional: true },
+          { id: 'weight', label: 'Unit Weight (lbs, if known)', type: 'number', optional: true },
         ]}
       ]
     },
@@ -116,21 +118,20 @@ window.SURVEY_FORM = {
           { id: 'tag', label: 'Unit Label', type: 'text' },
           { id: 'area', label: 'Area Served', type: 'text', suggest: ['Deli', 'Bakery', 'Prepared foods', 'Seafood', 'Pizza', 'Rotisserie'] },
           CATEGORY,
-          { id: 'hoodType', label: 'Type of Hood', type: 'choice', options: ['Wall canopy', 'Island canopy', 'Back shelf', 'Other'] },
+          { id: 'hoodType', label: 'Type of Hood', type: 'choice', options: ['Wall', 'Island', 'Wall used as Island', 'Island used as Wall'] },
           { id: 'mfr', label: 'Manufacturer', type: 'text', suggest: ['CaptiveAire', 'Halton', 'Greenheck', 'Accurex', 'Gaylord'] },
           { id: 'dcv', label: 'Demand Ventilation', type: 'yesno' },
           { id: 'length', label: 'Length (inches)', type: 'number' },
-          { id: 'depth', label: 'Depth (inches)', type: 'number' },
           { id: 'condition', label: 'Overall Condition of Unit', type: 'choice', options: COND },
-          { id: 'controls', label: 'Controls', type: 'choice', options: ['Switch', 'Demand Control', 'Other'] },
+          { id: 'controls', label: 'Controls', type: 'choice', options: ['Switch', 'Demand Control'] },
           { id: 'fits', label: 'Does Equipment Fit Under Hood', type: 'yesno' },
-          { id: 'equipment', label: 'Type of Equipment Under Hood', type: 'text', suggest: ['Fryers', 'Oven', 'Rotisserie', 'Griddle', 'Pizza oven', 'Smoker', 'Dishwasher'] },
+          { id: 'equipment', label: 'Type of Equipment Under Hood', type: 'multi', options: ['Fryers', 'Oven', 'Rotisserie', 'Griddle', 'Range', 'Pizza oven', 'Smoker', 'Steamer', 'Dishwasher'] },
           { id: 'exhaustOnly', label: 'Exhaust Only Hood', type: 'yesno' },
           { id: 'ef', label: 'Associated Exhaust Fan (tag)', type: 'text' },
           { id: 'notes', label: 'Additional Notes', type: 'textarea', optional: true },
           { id: 'photo', label: 'Picture of Hood', type: 'photo', expect: true },
-          { id: 'exhaustCfm', label: 'Hood Exhaust CFM', type: 'number', lookup: true },
-          { id: 'makeupCfm', label: 'Hood Makeup CFM', type: 'number', lookup: true },
+          { id: 'exhaustCfm', label: 'Hood Exhaust CFM (if known)', type: 'number', optional: true },
+          { id: 'makeupCfm', label: 'Hood Makeup CFM (if known)', type: 'number', optional: true },
         ]}
       ]
     },
