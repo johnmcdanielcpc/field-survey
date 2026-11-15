@@ -153,10 +153,9 @@
           flushPairs();
           const arr = obj[f.id] || [];
           if (!arr.length) { pairs.push({ label: f.itemName + 's', value: 'None recorded', missing: false }); flushPairs(); continue; }
-          for (let i = 0; i < arr.length; i++) {
-            const it = arr[i];
+          for (const { it, label } of FS.sortedItems(f, arr)) {
             const right = [it.category, it.running === 'No' ? 'Not running' : ''].filter(Boolean).join(' | ');
-            itemBar(FS.itemLabel(f, it, i) + (it.area ? `  -  ${it.area}` : ''), right, depth);
+            itemBar(label + (it.area ? `  -  ${it.area}` : ''), right, depth);
             await group(f.fields, it, `${route}/${f.id}/${it._id}`, depth + 1);
           }
           continue;

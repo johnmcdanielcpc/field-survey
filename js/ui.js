@@ -191,10 +191,13 @@
     view.innerHTML = `${banner}
       ${unreviewed ? `<div class="banner lookup"><b>${unreviewed} look-up value${unreviewed > 1 ? 's' : ''} need your review.</b> They're shaded blue on the unit screens.</div>` : ''}
       <div id="secs"></div>
-      <h2>More</h2>
-      <div class="card btnrow">
-        <button class="btn" id="pdfBtn">Preview PDF</button>
-        <button class="btn" id="xlBtn">Excel workbook</button>
+      <h2>Save a copy (optional)</h2>
+      <div class="card">
+        <div class="muted" style="margin-bottom:10px">You don't need these. <b>Finish &amp; Upload</b> puts the PDF and Excel in Google Drive for you. These buttons make a copy on this phone and open the iPhone share screen, where you can tap <b>Save to Files</b>, email it, or AirDrop it.</div>
+        <div class="btnrow">
+          <button class="btn" id="pdfBtn">Share / save PDF…</button>
+          <button class="btn" id="xlBtn">Share / save Excel…</button>
+        </div>
       </div>
       <div class="card btnrow">
         ${s.status === 'uploaded' ? '<button class="btn" id="freeBtn">Remove photos from this device</button>' : ''}

@@ -1,7 +1,7 @@
 /* Startup: service worker (offline), persistent storage, first route, background upload. */
 (function () {
   const FS = window.FS;
-  FS.VERSION = '1.0.7';
+  FS.VERSION = '1.0.8';
 
   if ('serviceWorker' in navigator && window.isSecureContext) {
     navigator.serviceWorker.register('sw.js').then(reg => {

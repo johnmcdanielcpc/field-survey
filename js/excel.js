@@ -37,7 +37,7 @@
     const kinds = [['rtus', 'rtu'], ['efs', 'ef'], ['hoods', 'hood']];
     for (const [secId, kind] of kinds) {
       const sec = FS.section(secId), def = sec.fields[0];
-      survey.values[secId][def.id].forEach((it, i) => {
+      FS.sortedItems(def, survey.values[secId][def.id]).forEach(({ it, i }) => {
         const route = `${secId}/${def.id}/${it._id}`;
         const firstPlate = (it.dataPlate || it.photo || it.sides || [])[0];
         units.push({ kind, it, route, tag: FS.itemLabel(def, it, i), def, photo: firstPlate && photoDrive[firstPlate] ? driveUrl(photoDrive[firstPlate]) : survey.sync.folderUrl || '' });
@@ -311,8 +311,8 @@
     rfH.forEach((h, k) => { const c = rf.getCell(3, k + 1); c.value = h; c.font = { bold: true, size: 10 }; c.border = BOX; c.fill = FILL(C_HEAD); c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; });
     let rr = 4;
     const mdef = FS.section('machine').fields[0], rdef = mdef.fields.find(f => f.id === 'racks');
-    (survey.values.machine.rooms || []).forEach((room, i) => {
-      (room.racks || []).forEach((rk, j) => {
+    FS.sortedItems(mdef, survey.values.machine.rooms).forEach(({ it: room, i }) => {
+      FS.sortedItems(rdef, room.racks).forEach(({ it: rk, i: j }) => {
         const route = `machine/rooms/${room._id}/racks/${rk._id}`;
         const pic = [...(rk.plate || []), ...(rk.compPlates || [])].find(id => photoDrive[id]);
         const thr = num(rk.thr);

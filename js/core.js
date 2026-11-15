@@ -84,6 +84,11 @@
     return { sec, chain, last: chain[chain.length - 1] };
   };
 
+  /* Units in number order by their label (RTU-1, RTU-2 … RTU-10), whatever order they were surveyed in.
+     Each entry keeps its original position so unnamed units keep their "Unit 3" style label. */
+  FS.sortedItems = (def, arr) => (arr || []).map((it, i) => ({ it, i, label: FS.itemLabel(def, it, i) }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'en', { numeric: true, sensitivity: 'base' }) || a.i - b.i);
+
   /* Walk every visible field. cb({sec, field, obj, route, labels:[...]}) */
   FS.walk = function (survey, cb, opts = {}) {
     for (const sec of F.sections) {
@@ -91,10 +96,10 @@
         for (const f of fields) {
           if (!FS.visible(f, obj)) continue;
           if (f.type === 'repeat') {
-            (obj[f.id] || []).forEach((it, i) => {
+            FS.sortedItems(f, obj[f.id]).forEach(({ it, i, label }) => {
               const r = `${route}/${f.id}/${it._id}`;
-              if (opts.onItem) opts.onItem({ sec, def: f, item: it, idx: i, route: r, labels: [...labels, FS.itemLabel(f, it, i)] });
-              go(f.fields, it, r, [...labels, FS.itemLabel(f, it, i)]);
+              if (opts.onItem) opts.onItem({ sec, def: f, item: it, idx: i, route: r, labels: [...labels, label] });
+              go(f.fields, it, r, [...labels, label]);
             });
           } else cb({ sec, field: f, obj, route, labels });
         }
