@@ -114,7 +114,7 @@
     const all = (await DB.all('surveys')).map(FS.normalize).sort((a, b) => b.updatedAt - a.updatedAt);
     const waiting = all.filter(s => ['queued', 'uploading', 'error'].includes(s.status));
     view.innerHTML = `
-      ${!st.url ? `<div class="banner warn">Uploads aren't set up on this device yet. Open the setup link you were sent, or enter the upload link in <a href="#/settings">Settings</a>.</div>` : ''}
+      ${!st.url ? `<div class="banner warn">Uploads aren't set up on this device yet. Open <a href="#/settings">Settings</a> and paste the setup link you were sent.</div>` : ''}
       ${waiting.length ? `<div class="banner warn row"><div class="grow"><b>${waiting.length} survey${waiting.length > 1 ? 's' : ''} waiting to upload.</b> ${navigator.onLine ? '' : 'No signal right now — they will upload when the app is open with signal.'}</div>
         <button class="btn" id="syncNow">Upload now</button></div>` : ''}
       <div class="card">
@@ -251,7 +251,7 @@
       location.hash = `#/s/${s.id}/review`; return;
     }
     const st = await FS.settings();
-    if (!st.url) { alert('Uploads are not set up on this device. Open Settings and enter the upload link.'); return; }
+    if (!st.url) { alert('Uploads are not set up on this device yet. Open Settings (the gear) and paste the setup link you were sent.'); return; }
     s.status = 'queued'; s.sync.queuedAt = Date.now(); s.sync.lastError = '';
     await FS.save(true);
     FS.toast(navigator.onLine ? 'Uploading…' : 'Saved to outbox. It will upload when you have signal.');
@@ -501,6 +501,12 @@
     try { const e = await navigator.storage.estimate(); est = `${FS.fmtBytes(e.usage || 0)} used of about ${FS.fmtBytes(e.quota || 0)} available`; } catch (e) { }
     view.innerHTML = `
       <div class="card">
+        <div class="flabel">Paste setup link</div>
+        <p class="muted" style="margin:0 0 8px">Copy the setup link you were sent, paste it here and tap Apply. This fills in the upload settings and names.</p>
+        <textarea id="setupPaste" placeholder="https://…#setup=…" autocapitalize="off" autocorrect="off" spellcheck="false" style="min-height:64px"></textarea>
+        <button class="btn primary block" id="applySetup" style="margin-top:8px">Apply setup link</button>
+      </div>
+      <div class="card">
         <div class="flabel">Names in the dropdown</div>
         <div id="names"></div>
         <div class="row" style="margin-top:8px"><input id="newName" type="text" placeholder="Add a name" autocapitalize="words"><button class="btn" id="addName">Add</button></div>
@@ -521,6 +527,13 @@
       <div class="card"><div class="flabel">Storage</div><div class="muted">${esc(est)}</div>
         <div class="muted" style="margin-top:6px">App version ${esc(FS.VERSION)}</div>
         <button class="btn block" id="upd" style="margin-top:8px">Check for app update</button></div>`;
+    $('#applySetup').onclick = async () => {
+      const v = $('#setupPaste').value.trim();
+      const m = v.match(/#setup=([A-Za-z0-9_\-+/=]+)/);
+      if (!m) { alert('That doesn\'t look like a setup link. It should contain "#setup=".'); return; }
+      try { await saveSetup(m[1]); FS.toast('✓ Upload settings saved on this device', 4000); FS.updateNet(); settingsView(); }
+      catch (e) { alert('That setup link did not work: ' + e.message); }
+    };
     const drawNames = async () => {
       const names = await DB.kvGet('names', st.names);
       $('#names').innerHTML = names.map((n, i) => `<div class="row name-row"><div class="grow">${esc(n)}</div><button class="btn small danger" data-i="${i}">Remove</button></div>`).join('');
@@ -550,14 +563,16 @@
     };
   }
 
+  async function saveSetup(b64) {
+    const cfg = JSON.parse(decodeURIComponent(escape(atob(b64.replace(/-/g, '+').replace(/_/g, '/')))));
+    if (!cfg.url || !cfg.key) throw new Error('link is missing the upload settings');
+    await DB.kvSet('uploadUrl', cfg.url);
+    await DB.kvSet('uploadKey', cfg.key);
+    if (cfg.names) { const names = await DB.kvGet('names', FS.DEFAULT_NAMES); for (const n of cfg.names) if (!names.includes(n)) names.push(n); await DB.kvSet('names', names); }
+  }
   async function applySetupLink(b64) {
-    try {
-      const cfg = JSON.parse(decodeURIComponent(escape(atob(b64.replace(/-/g, '+').replace(/_/g, '/')))));
-      if (cfg.url) await DB.kvSet('uploadUrl', cfg.url);
-      if (cfg.key) await DB.kvSet('uploadKey', cfg.key);
-      if (cfg.names) { const names = await DB.kvGet('names', FS.DEFAULT_NAMES); for (const n of cfg.names) if (!names.includes(n)) names.push(n); await DB.kvSet('names', names); }
-      FS.toast('✓ Upload settings saved on this device', 4000);
-    } catch (e) { alert('That setup link did not work: ' + e.message); }
+    try { await saveSetup(b64); FS.toast('✓ Upload settings saved on this device', 4000); }
+    catch (e) { alert('That setup link did not work: ' + e.message); }
     history.replaceState(null, '', location.pathname + '#/');
     route();
   }

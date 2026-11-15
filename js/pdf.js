@@ -90,12 +90,13 @@
           photoDone++;
           prog(`Adding photos to PDF… ${photoDone} of ${allPhotos}`);
           const rec = await FS.getPhoto(id);
-          let img = null;
+          let img = null, why = '';
           try {
             const src = rec && await FS.displayBlob(rec);
             if (src) img = await FS.scaleToBlob(src, plate ? 1600 : 1200, plate ? 0.8 : 0.75);
-          } catch (e) { console.warn(e); }
-          row.push({ id, rec, img, n: i + row.length + 1 });
+            else why = 'photo file missing';
+          } catch (e) { console.warn(e); why = (e && e.message) || String(e); }
+          row.push({ id, rec, img, why, n: i + row.length + 1 });
         }
         const sizes = row.map(r => {
           if (!r.img) return { w: cellW, h: 60 };
@@ -119,7 +120,9 @@
             if (opts.links && driveId) doc.link(cx, y, sz.w, sz.h, { url: `https://drive.google.com/file/d/${driveId}/view` });
           } else {
             doc.setDrawColor(...LINE); doc.rect(cx, y, cellW, 60);
-            doc.setFontSize(8); doc.setTextColor(...GRAY); doc.text('Photo not on this device', cx + 8, y + 32);
+            doc.setFontSize(8); doc.setTextColor(...GRAY); doc.text(t('Photo could not be added' + (r.why ? ' (' + r.why + ')' : '') + ' - tap to open it in Drive'), cx + 8, y + 32, { maxWidth: cellW - 16 });
+            const did = r.rec && (FS.hasMarkup(r.rec) ? r.rec.markedDriveId : r.rec.driveId);
+            if (opts.links && did) doc.link(cx, y, cellW, 60, { url: `https://drive.google.com/file/d/${did}/view` });
           }
           doc.setFontSize(8); doc.setTextColor(...GRAY);
           const cap = `Photo ${r.n}${FS.hasMarkup(r.rec) ? ' - marked up' : ''}${opts.links && r.rec && (r.rec.driveId) ? ' - tap to open full size' : ''}`;

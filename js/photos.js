@@ -3,13 +3,34 @@
   const FS = window.FS, DB = FS.DB;
   const urlCache = new Map();
 
-  FS.loadImage = blob => new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
+  /* Decode a photo for drawing. iPhone Safari can refuse to draw a photo straight out of the
+     app's storage, so first copy it into memory, then try a blob URL, then a data URL. */
+  const viaUrl = (url, revoke) => new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => { resolve(img); setTimeout(() => URL.revokeObjectURL(url), 0); };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read image')); };
+    img.onload = () => { if (revoke) setTimeout(() => URL.revokeObjectURL(url), 0); resolve(img); };
+    img.onerror = () => { if (revoke) URL.revokeObjectURL(url); reject(new Error('could not decode image')); };
     img.src = url;
   });
+  FS.memBlob = async blob => {
+    try { return new Blob([await blob.arrayBuffer()], { type: blob.type || 'image/jpeg' }); }
+    catch (e) {
+      const buf = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsArrayBuffer(blob); });
+      return new Blob([buf], { type: blob.type || 'image/jpeg' });
+    }
+  };
+  FS.loadImage = async blob => {
+    const mem = await FS.memBlob(blob);
+    try { return await viaUrl(URL.createObjectURL(mem), true); }
+    catch (e1) {
+      const du = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(mem); });
+      return viaUrl(du, false);
+    }
+  };
+  const canvasToBlob = (c, q) => new Promise(resolve => {
+    const fallback = () => { try { const du = c.toDataURL('image/jpeg', q); const bin = atob(du.split(',')[1]); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); resolve(new Blob([u], { type: 'image/jpeg' })); } catch (e) { resolve(null); } };
+    try { c.toBlob(b => b ? resolve(b) : fallback(), 'image/jpeg', q); } catch (e) { fallback(); }
+  });
+  FS.canvasToBlob = canvasToBlob;
 
   FS.scaleToBlob = async function (blob, maxPx, quality) {
     const img = await FS.loadImage(blob);
@@ -17,8 +38,9 @@
     const w = Math.round(img.naturalWidth * s), h = Math.round(img.naturalHeight * s);
     const c = document.createElement('canvas'); c.width = w; c.height = h;
     c.getContext('2d').drawImage(img, 0, 0, w, h);
-    const out = await new Promise(r => c.toBlob(r, 'image/jpeg', quality));
+    const out = await canvasToBlob(c, quality);
     c.width = c.height = 0;
+    if (!out) throw new Error('could not compress image');
     return { blob: out, w, h, srcW: img.naturalWidth, srcH: img.naturalHeight };
   };
 
@@ -71,7 +93,7 @@
     let b = full ? await FS.displayBlob(rec) : (rec.markedThumb || rec.thumb);
     if (!b && !full && rec.driveId && FS.Sync) { try { b = await FS.Sync.thumb(rec.driveId); rec.thumb = b; await DB.put('photos', rec); } catch (e) { } }
     if (!b) return '';
-    const u = URL.createObjectURL(b);
+    const u = URL.createObjectURL(await FS.memBlob(b));
     urlCache.set(key, u);
     return u;
   };
@@ -207,7 +229,7 @@
           const x = c.getContext('2d');
           x.drawImage(img, 0, 0, c.width, c.height);
           for (const st of strokes) FS.drawStroke(x, st, c.width, c.height);
-          rec.marked = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+          rec.marked = await canvasToBlob(c, 0.92);
           c.width = c.height = 0;
           rec.markedThumb = (await FS.scaleToBlob(rec.marked, 420, 0.72)).blob;
           rec.strokes = strokes; rec.markedDriveId = null; rec.markedAt = Date.now();
