@@ -295,7 +295,7 @@
         const b = $('#rollBtn'); b.hidden = !pend.length;
         const batch = FS.rollBatch(pend);
         b.textContent = batch.length ? `Save ${batch.length === 1 && batch[0].kind === 'video' ? 'next video' : `${batch.length} photo${batch.length > 1 ? 's' : ''}`} to Photos${pend.length > batch.length ? ` (${pend.length} left)` : ''}` : '';
-        b.onclick = () => { const bt = FS.rollBatch(pend); FS.saveRecsToPhotos(bt).then(ok => { if (ok) { pend = pend.filter(r => !bt.includes(r)); draw(); } }); };
+        b.onclick = () => { const bt = FS.rollBatch(pend); FS.saveRecsToPhotos(bt, b).then(ok => { if (ok) { pend = pend.filter(r => !bt.includes(r)); draw(); } }); };
       };
       draw();
     })();
@@ -507,8 +507,11 @@
     const label = `<label for="${id}">${esc(f.label)}</label>`;
     if ((f.type === 'text' && f.format !== 'mmyyyy') || f.type === 'number') {
       w.innerHTML = `${label}<input id="${id}" type="text" ${f.type === 'number' ? 'inputmode="decimal"' : f.format === 'mmyyyy' ? 'inputmode="numeric"' : f.inputmode ? `inputmode="${f.inputmode}"` : ''} ${f.hint ? `placeholder="${esc(f.hint)}"` : ""} autocomplete="off" autocorrect="off" autocapitalize="${f.type === 'number' ? 'off' : 'characters'}" value="${esc(obj[f.id] || '')}">` +
+        (f.measured ? `<label class="checkrow measured"><input type="checkbox" ${obj[f.measured] ? 'checked' : ''}> Field measured</label>` : '') +
         (f.suggest ? `<div class="sugg">${f.suggest.map(o => `<button type="button" class="chip small" data-v="${esc(o)}">${esc(o)}</button>`).join('')}<button type="button" class="chip small other" data-other="1">Other…</button></div>` : '');
       const inp = w.querySelector('input');
+      const mc = w.querySelector('.measured input');
+      if (mc) mc.addEventListener('change', () => { obj[f.measured] = mc.checked; FS.save(); });
       if (/model|serial|tag|label|name|curb/i.test(f.id) === false) inp.setAttribute('autocapitalize', 'sentences');
       const mark = () => w.querySelectorAll('.sugg .chip').forEach(x => x.classList.toggle('on', x.dataset.v === inp.value));
       if (f.format === 'mmyyyy') {
@@ -684,7 +687,7 @@
       if (!pend.length) { host.innerHTML = ids.length ? '<div class="muted small">✓ Saved to Photos</div>' : ''; return; }
       const bt = FS.rollBatch(pend);
       host.innerHTML = `<button type="button" class="btn small">📥 Save ${bt.length === 1 && bt[0].kind === 'video' ? 'video' : bt.length + ' photo' + (bt.length > 1 ? 's' : '')} to Photos${pend.length > bt.length ? ` (${pend.length} left)` : ''}</button>`;
-      host.querySelector('button').onclick = () => FS.saveRecsToPhotos(bt).then(ok => { if (ok) { pend = pend.filter(r => !bt.includes(r)); draw(); } });
+      const btn = host.querySelector('button'); btn.onclick = () => FS.saveRecsToPhotos(bt, btn).then(ok => { if (ok) { pend = pend.filter(r => !bt.includes(r)); draw(); } });
     };
     draw();
   }
@@ -697,18 +700,20 @@
       <div class="addphoto">
         <label class="btn"><input type="file" accept="video/*" capture="environment">🎥 Record video</label>
         <label class="btn"><input type="file" accept="video/*" multiple data-lib="1">🖼 Library</label>
-      </div><div class="rollrow"></div>`;
+      </div>`;
     const list = w.querySelector('.videos');
-    rollButton(ids, w.querySelector('.rollrow'));
     ids.forEach(async (vid, i) => {
       const row = document.createElement('div'); row.className = 'vrow';
-      row.innerHTML = `<button type="button" class="btn small" data-a="play">▶ Video ${i + 1}</button><span class="muted"></span><button type="button" class="btn small danger" data-a="del">Delete</button>`;
+      row.innerHTML = `<button type="button" class="btn small" data-a="play">▶ Video ${i + 1}</button><span class="muted"></span><button type="button" class="btn small" data-a="roll" hidden>📥 Save to Photos</button><button type="button" class="btn small danger" data-a="del">Delete</button>`;
       list.appendChild(row);
       const rec = await FS.getPhoto(vid);
+      const rb = row.querySelector('[data-a=roll]');
+      if (rec && rec.blob && await FS.rollSetting()) { rb.hidden = false; if (rec.inRoll) { rb.textContent = '✓ In Photos'; rb.disabled = true; } }
       row.querySelector('span').textContent = rec ? [FS.fmtDuration(rec.duration), rec.size ? FS.fmtBytes(rec.size) : '', rec.driveId ? 'in Drive' : ''].filter(Boolean).join(' · ') : 'missing';
       row.addEventListener('click', async e => {
         const a = e.target.closest('[data-a]'); if (!a) return;
         if (a.dataset.a === 'play') FS.playVideo(rec, `${f.label} – Video ${i + 1}`);
+        if (a.dataset.a === 'roll') FS.saveRecsToPhotos([rec], a).then(ok => { if (ok) { rec.inRoll = true; a.textContent = '✓ In Photos'; a.disabled = true; } });
         if (a.dataset.a === 'del') {
           if (!confirm('Delete this video?')) return;
           obj[f.id] = (obj[f.id] || []).filter(x => x !== vid); await DB.del('photos', vid); set(obj[f.id]); redraw();

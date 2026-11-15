@@ -201,7 +201,7 @@
         }
         if (FS.isUnfinished(f, v) && !FS.notChecked(f, obj)) { pairs.push({ label: f.label, value: String(v), missing: true }); continue; }
         const looked = meta && meta.src === 'lookup' && !meta.reviewed && meta.suggested === undefined;
-        pairs.push({ label: f.label, value: v + (looked ? ' (look-up, pending review)' : ''), wide: f.type === 'textarea' || String(v).length > 34, looked });
+        pairs.push({ label: f.label, value: v + (f.measured ? (obj[f.measured] ? ' (field measured)' : ' (not field measured)') : '') + (looked ? ' (look-up, pending review)' : ''), wide: f.type === 'textarea' || String(v).length > 34, looked });
       }
       flushPairs();
     }

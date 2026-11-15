@@ -34,7 +34,7 @@
     const units = [];
     const photoDrive = {};
     for (const rec of await FS.DB.photosFor(survey.id)) photoDrive[rec.id] = rec.driveId;
-    const kinds = [['rtus', 'rtu'], ['efs', 'ef'], ['hoods', 'hood']];
+    const kinds = [['rtus', 'rtu'], ['efs', 'ef'], ['maus', 'mau'], ['hoods', 'hood']];
     for (const [secId, kind] of kinds) {
       const sec = FS.section(secId), def = sec.fields[0];
       FS.sortedItems(def, survey.values[secId][def.id]).forEach(({ it, i }) => {
@@ -55,7 +55,8 @@
       if (it.running === 'No') out.push('Not running');
       if (it.condition) out.push('Condition: ' + it.condition);
       if (it.disconnect) out.push('Disconnect: ' + it.disconnect);
-      if (it.panel || it.breaker) out.push(`Breaker: ${it.breaker ? String(it.breaker).replace(/\s*a(mps?)?$/i, '') + 'A' : 'size ?'}${it.panel ? ' in panel ' + it.panel : ''}`);
+      if (it.panel === 'Not Identified' && !it.breaker) out.push('Breaker panel not identified');
+      else if (it.panel || it.breaker) out.push(`Breaker: ${it.breaker ? String(it.breaker).replace(/\s*a(mps?)?$/i, '') + 'A' : 'size ?'}${it.panel && it.panel !== 'Not Identified' ? ' in panel ' + it.panel : it.panel ? ' (panel not identified)' : ''}`);
       if (it.notes) out.push(it.notes.replace(/\s*\n\s*/g, '; '));
       return out.join('; ');
     }
@@ -130,7 +131,7 @@
       const it = u.it, ns = it.category === 'Not sure';
       rep.getCell(r, 1).value = u.tag; rep.getCell(r, 2).value = it.area || '';
       paint(rep, r, 3, u, 'mfr', it.mfr || ''); paint(rep, r, 4, u, 'model', it.model || ''); paint(rep, r, 5, u, 'serial', it.serial || '');
-      if (it.heatType === 'Gas') { paint(rep, r, 6, u, 'btuIn', mbh(it.btuIn)); paint(rep, r, 7, u, 'btuOut', mbh(it.btuOut)); }
+      if (/^Gas/.test(it.heatType || '')) { paint(rep, r, 6, u, 'btuIn', mbh(it.btuIn)); paint(rep, r, 7, u, 'btuOut', mbh(it.btuOut)); }
       paint(rep, r, 9, u, 'mfgDate', it.mfgDate || ''); paint(rep, r, 10, u, 'refrigerant', it.refrigerant || '');
       const yr = year(it.mfgDate); rep.getCell(r, 11).value = yr ? { formula: `YEAR(TODAY())-${yr}` } : '';
       paint(rep, r, 12, u, 'voltage', it.voltage || ''); paint(rep, r, 13, u, 'mca', num(it.mca)); paint(rep, r, 14, u, 'mocp', num(it.mocp));
@@ -238,14 +239,31 @@
       if (it.notes) p.push(it.notes.replace(/\s*\n\s*/g, '; '));
       return p.join('; ');
     };
+    const mauNote = u => {
+      const it = u.it, p = [];
+      if (num(it.supplyCfm) != null) p.push(it.cfmMeasured ? 'Supply CFM field measured' : 'Supply CFM NOT field measured (data plate / estimate)');
+      if (it.mfr) p.push('Mfr: ' + it.mfr);
+      if (it.model) p.push('Model: ' + it.model);
+      if (it.serial) p.push('Serial: ' + it.serial);
+      if (it.voltage) p.push(it.voltage + 'V');
+      if (it.heatType) p.push(/^Gas/.test(it.heatType) && it.btuIn ? `${it.heatType} heat ${mbh(it.btuIn)} MBH in` : `${it.heatType} heat`);
+      if (it.cooling && it.cooling !== 'None') p.push(it.cooling + ' cooling');
+      if (it.filter) p.push('Filter ' + it.filter);
+      if (it.drive) p.push(it.drive + ' drive');
+      if (it.curb) p.push('Curb ' + it.curb);
+      const n = noteFor(u); if (n) p.push(n);
+      if (it.category) p.push('Category: ' + it.category);
+      return p.join('; ');
+    };
     const efs = units.filter(u => u.kind === 'ef' && inAB(u));
+    const maus = units.filter(u => u.kind === 'mau' && inAB(u));
     const rtus = units.filter(u => u.kind === 'rtu' && inAB(u));
     const hoods = units.filter(u => u.kind === 'hood' && inAB(u));
     const placed = new Map();                       // fan unit -> hood it is listed under
     const key = t => String(t || '').trim().toUpperCase();
     const groups = hoods.map(h => {
       const lk = links(h), rows = [];
-      for (const [tags, pool] of [[lk.ef, efs], [lk.mau, rtus]]) for (const t of tags) {
+      for (const [tags, pool] of [[lk.ef, efs], [lk.mau, [...maus, ...rtus]]]) for (const t of tags) {
         const f = pool.find(x => key(x.tag) === key(t));
         if (!f) continue;
         if (placed.has(f)) { (f.alsoHoods = f.alsoHoods || []).push(h.tag); continue; }
@@ -254,6 +272,7 @@
       return { h, rows };
     });
     for (const u of rtus) if (!placed.has(u)) abRows.push({ u, type: 'rtu' });
+    for (const u of maus) if (!placed.has(u)) abRows.push({ u, type: 'mau' });
     for (const g of groups) { abRows.push({ u: g.h, type: 'hood' }); abRows.push(...g.rows); }
     for (const e of efs) if (!placed.has(e)) abRows.push({ u: e, type: 'ef' });
     let ar = 7;
@@ -268,6 +287,9 @@
         if (tons != null) paint(ab, ar, 5, u, 'tons', tons);
         else if (num(it.supplyCfm) != null) ab.getCell(ar, 5).value = { formula: `B${ar}/400` };
         ab.getCell(ar, 8).value = hoodPre + rtuNote(u);
+      } else if (row.type === 'mau') {
+        paint(ab, ar, 3, u, 'supplyCfm', num(it.supplyCfm));            // 100% outside air: counts toward space pressure
+        ab.getCell(ar, 8).value = hoodPre + mauNote(u);
       } else if (row.type === 'hood') {
         ab.getCell(ar, 8).value = hoodNote(u);
       } else {
@@ -295,7 +317,7 @@
     const abNotes = [
       'NO MECH. PLANS; TONNAGE AND CFM VALUES ARE ESTIMATED WHERE NOT SHOWN ON DATA PLATE.',
       'VALUES SHADED BLUE ARE FROM MANUFACTURER LOOK-UP BY MODEL/SERIAL AND ARE PENDING REVIEW (SEE LOOK-UP REVIEW TAB).',
-      'EXHAUST SHOWN AS NEGATIVE. MAKEUP COLUMN = UNIT OUTSIDE AIR CFM.',
+      'EXHAUST SHOWN AS NEGATIVE. MAKEUP COLUMN = RTU OUTSIDE AIR CFM, AND MAU SUPPLY CFM (100% OUTSIDE AIR).',
       'EACH HOOD (GRAY ROW) IS FOLLOWED BY ITS EXHAUST FAN(S) AND MAKEUP AIR UNIT(S); HOOD CFM IS CARRIED BY THOSE FANS.',
       'SPACE PRESSURIZATION = MAKEUP + EXHAUST (SUPPLY AIR IS RECIRCULATED AND NOT INCLUDED).',
       'EQUIPMENT MARKED REMOVE & CAP IS NOT INCLUDED. ROWS SHADED YELLOW ARE "NOT SURE" - VERIFY.',

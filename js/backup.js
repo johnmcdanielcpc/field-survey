@@ -145,17 +145,31 @@
     for (const id of ids) { const r = await DB.get('photos', id); if (r && r.blob && !r.inRoll) out.push(r); }
     return out;
   };
-  // MUST be called straight from a tap (no awaits before navigator.share), so pass records already loaded
-  FS.saveRecsToPhotos = function (recs) {
+  // MUST be called straight from a tap (no awaits before navigator.share), so pass records already loaded.
+  // btn (optional): shows "Opening…" while the share screen is up, and the reason if it doesn't open.
+  FS.saveRecsToPhotos = function (recs, btn) {
+    const say = msg => { if (btn) { let n = btn.parentNode && btn.parentNode.querySelector('.rollmsg'); if (!n) { n = document.createElement('div'); n.className = 'rollmsg muted small'; btn.insertAdjacentElement('afterend', n); } n.textContent = msg; } else alert(msg); };
     const files = recs.map((r, i) => new File([r.blob], `Survey ${r.kind === 'video' ? 'video' : 'photo'} ${i + 1}${FS.mediaExt(r)}`, { type: r.mime || r.blob.type || (r.kind === 'video' ? 'video/quicktime' : 'image/jpeg') }));
     if (!navigator.share || !(navigator.canShare && navigator.canShare({ files }))) {
-      alert('Saving to Photos needs the iPhone share screen, which is not available here.');
+      say('This file can\'t be sent to the iPhone share screen' + (recs[0] && recs[0].kind === 'video' ? ' (video may be too large). It is still safe in the app and in the backup file.' : '.'));
       return Promise.resolve(false);
     }
-    return navigator.share({ files }).then(async () => {
+    const t0 = Date.now(), label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Opening share screen…'; }
+    const done = () => { if (btn) { btn.disabled = false; btn.textContent = label; } };
+    let p;
+    try { p = navigator.share({ files }); } catch (e) { p = Promise.reject(e); }
+    return p.then(async () => {
       for (const r of recs) { const cur = await DB.get('photos', r.id); if (cur) { cur.inRoll = true; await DB.put('photos', cur); } }
-      return true;
-    }).catch(e => { if (e && e.name !== 'AbortError') alert('Could not open the share screen: ' + e.message); return false; });
+      done(); const m = btn && btn.parentNode && btn.parentNode.querySelector('.rollmsg'); if (m) m.remove(); return true;
+    }).catch(e => {
+      done();
+      const fast = Date.now() - t0 < 1200;
+      if (e && e.name === 'AbortError' && !fast) return false;          // the user closed the share screen
+      if (e && e.name === 'InvalidStateError') say('The last share screen hasn\'t finished. Close it (or switch to another app and back), wait a few seconds, then tap again.');
+      else say(`The share screen didn't open (${e && e.name || 'error'}${e && e.message ? ': ' + e.message : ''}). Wait a few seconds and tap again.`);
+      return false;
+    });
   };
   // one share screen at a time: 10 photos, or 1 video
   FS.rollBatch = recs => {
