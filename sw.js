@@ -1,5 +1,5 @@
 /* Offline: keep the whole app on the device. Bump VERSION when files change. */
-const VERSION = 'field-survey-1.0.5';
+const VERSION = 'field-survey-1.0.6';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png',
   './form.js', './js/db.js', './js/core.js', './js/photos.js', './js/ui.js', './js/pdf.js', './js/excel.js', './js/sync.js', './js/app.js',

@@ -44,7 +44,9 @@ window.SURVEY_FORM = {
       id: 'site', title: 'Site Information', fields: [
         { id: 'customer', label: 'Customer', type: 'text', suggest: ['Whole Foods', 'Stop & Shop', 'Publix', 'Kroger', "Sedano's"] },
         { id: 'store', label: 'Store Number / Identifier', type: 'text' },
-        { id: 'address', label: 'Address (street, city, state)', type: 'textarea' },
+        { id: 'address', label: 'Street Address', type: 'text' },
+        { id: 'city', label: 'City', type: 'text' },
+        { id: 'state', label: 'State', type: 'text', hint: 'GA, MA, FL…' },
         { id: 'specialist', label: 'CX Specialist', type: 'person' },
         { id: 'date', label: 'Survey Date', type: 'date', default: 'today' },
         { id: 'storeFront', label: 'Store Front', type: 'photo', expect: true },
