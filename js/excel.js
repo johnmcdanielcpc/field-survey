@@ -176,7 +176,7 @@
     ab.columns = [16, 11, 11, 11, 10, 22, 12, 90].map(w => ({ width: w }));
     ab.getCell('A1').value = 'Project:'; ab.getCell('B1').value = project; ab.getCell('B1').font = { bold: true };
     ab.getCell('G1').value = 'Date Created:'; ab.getCell('H1').value = site.date || '';
-    ab.getCell('A2').value = 'Location:'; ab.getCell('B2').value = (site.address || '').replace(/\s*\n\s*/g, ', ');
+    ab.getCell('A2').value = 'Location:'; ab.getCell('B2').value = FS.fullAddress(site);
     ab.getCell('G2').value = 'REV.:';
     ab.getCell('A4').value = 'AIR-BALANCE SCHEDULE'; ab.getCell('A4').font = { bold: true, size: 12 };
     const abH = ['TAG', 'SUPPLY', 'MAKEUP', 'EXHAUST', 'Capacity', 'SERVICE', '', 'Notes'];

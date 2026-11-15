@@ -135,13 +135,24 @@
     return [v.customer, v.store].filter(Boolean).join(' – ') || 'Untitled survey';
   };
   FS.safeName = s => String(s || '').replace(/[\\/:*?"<>|#%]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120);
+  // "Canton, GA" — from the City/State boxes, or pulled from an older one-box address ("…, Canton, GA 30114")
+  FS.cityState = v => {
+    let city = String(v.city || '').trim(), st = String(v.state || '').trim().toUpperCase();
+    if (!city || !st) {
+      const m = String(v.address || '').replace(/\s*\n\s*/g, ', ').match(/([A-Za-z .'-]+),\s*([A-Za-z]{2})\.?(?:\s+\d{5}(?:-\d{4})?)?\s*$/);
+      if (m) { city = city || m[1].trim(); st = st || m[2].toUpperCase(); }
+    }
+    return [city, st].filter(Boolean).join(', ');
+  };
+  FS.fullAddress = v => [String(v.address || '').replace(/\s*\n\s*/g, ', ').trim(), (v.city || v.state) ? FS.cityState(v) : ''].filter(Boolean).join(', ');
   FS.folderPath = s => {
     const v = s.values.site;
-    return [FS.safeName(v.customer || 'No Customer'), FS.safeName(`${v.store || 'Store'} – ${v.date || FS.today()}`)];
+    return [FS.safeName(v.customer || 'No Customer'),
+      FS.safeName([v.store || 'Store', FS.cityState(v), v.date || FS.today()].filter(Boolean).join(' – '))];
   };
   FS.fileBase = s => {
     const v = s.values.site;
-    return FS.safeName(`${v.customer || 'Survey'} ${v.store || ''} – ${v.date || ''} – Field Survey`);
+    return FS.safeName(`${[[v.customer || 'Survey', v.store].filter(Boolean).join(' '), FS.cityState(v), v.date].filter(Boolean).join(' – ')} – Field Survey`);
   };
   FS.surveyNo = s => {
     const v = s.values.site;
