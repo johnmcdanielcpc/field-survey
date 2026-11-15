@@ -167,7 +167,8 @@ window.SURVEY_FORM = {
           { id: 'name', label: 'Room Name', type: 'text', suggest: ['Main Electrical Room', 'Back Room', 'Mezzanine', 'Compressor Room', 'Roof'] },
           { id: 'location', label: 'Where is it? (how to find it)', type: 'text', hint: 'e.g. back of house behind receiving, up the mezzanine stairs' },
           { id: 'panels', type: 'repeat', itemName: 'Panel', addLabel: 'Add panel', labelField: 'name', fields: [
-            { id: 'name', label: 'Panel Name', type: 'text', suggest: ['480/3', '208/3', 'LG', 'MDP'] },
+            { id: 'name', label: 'Panel Name', type: 'text', hint: 'As labeled on the panel, e.g. LP-1, HA, MDP' },
+            { id: 'voltage', label: 'Panel Voltage', type: 'choice', options: ['120/208V 3Ø', '277/480V 3Ø', '120/240V 1Ø', '120/208V 1Ø', '347/600V 3Ø'] },
             { id: 'dataPlate', label: 'Electrical Panel Data Plate', type: 'photo', expect: true, plate: true },
             { id: 'spares', label: 'Electrical Panel Spare Spaces', type: 'text' },
             { id: 'notes', label: 'Additional Notes', type: 'textarea', optional: true },
