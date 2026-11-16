@@ -29,7 +29,14 @@
     let offset = 0, done = 0;
     for (const e of entries) {
       const name = enc.encode(e.name);
-      const crc = await crc32(e.blob, n => { done += n; onProgress && onProgress(done, total); });
+      let crc;
+      try { crc = await crc32(e.blob, n => { done += n; onProgress && onProgress(done, total); }); }
+      catch (err) {
+        // the phone's copy could not be read: use the copy in Google Drive if there is one
+        const alt = e.repair && await e.repair().catch(() => null);
+        if (!alt) throw new Error(`${e.name.replace(/^.*\//, '')} could not be read on this phone.`);
+        e.blob = alt; crc = await crc32(e.blob);
+      }
       const h = new DataView(new ArrayBuffer(30));
       h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
       h.setUint16(10, time, true); h.setUint16(12, date, true); h.setUint32(14, crc, true);
@@ -90,8 +97,8 @@
         w: r.w, h: r.h, takenAt: r.takenAt, strokes: r.strokes || null, inRoll: !!r.inRoll, file: null, markedFile: null };
       const base = c ? `${c.base} – ${c.n}` : `Unused – ${r.id}`;
       const folder = r.kind === 'video' ? 'Videos/' : 'Photos/';
-      if (r.blob) { m.file = folder + uniq(base, FS.mediaExt(r)); entries.push({ name: m.file, blob: r.blob }); }
-      if (r.marked) { m.markedFile = 'Photos/' + uniq(base + ' (marked)', '.jpg'); entries.push({ name: m.markedFile, blob: r.marked }); }
+      if (r.blob) { m.file = folder + uniq(base, FS.mediaExt(r)); entries.push({ name: m.file, blob: r.blob, repair: () => FS.repairFromDrive(r, false) }); }
+      if (r.marked) { m.markedFile = 'Photos/' + uniq(base + ' (marked)', '.jpg'); entries.push({ name: m.markedFile, blob: r.marked, repair: () => FS.repairFromDrive(r, true) }); }
       meta.push(m);
     }
     const data = { app: 'field-survey', version: 1, backup: true, appVersion: FS.VERSION, madeAt: new Date().toISOString(), survey: s, photos: meta };

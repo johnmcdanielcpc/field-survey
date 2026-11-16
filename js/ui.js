@@ -203,7 +203,9 @@
         <button class="btn primary" id="sendVid" style="margin-top:8px">Send videos now</button></div>`;
       banner += edited
         ? `<div class="banner warn">Changed since it was uploaded. <button class="btn" id="reup" style="margin-top:8px">Re-upload changes</button></div>`
-        : `<div class="banner ok"><b>✓ Uploaded to Google Drive</b> ${FS.fmtDateTime(sy.uploadedAt)}${sy.folderUrl ? ` · <a href="${esc(sy.folderUrl)}" target="_blank">Open folder</a>` : ''}</div>`;
+        : `<div class="banner ok"><b>✓ Uploaded to Google Drive</b> ${FS.fmtDateTime(sy.uploadedAt)}${sy.folderUrl ? ` · <a href="${esc(sy.folderUrl)}" target="_blank">Open folder</a>` : ''}
+            ${sy.pdfMissing ? `<div style="margin-top:6px">${sy.pdfMissing} photo${sy.pdfMissing > 1 ? 's' : ''} could not be put in the PDF.</div>` : ''}
+            <div style="margin-top:6px"><button class="btn small" id="rebuild">Rebuild PDF &amp; Excel in Drive</button></div></div>`;
     }
     view.innerHTML = `${banner}
       ${unreviewed ? `<div class="banner lookup"><b>${unreviewed} look-up value${unreviewed > 1 ? 's' : ''} need your review.</b> They're shaded blue on the unit screens.</div>` : ''}
@@ -253,6 +255,13 @@
     $('#finBtn').onclick = () => finish(s);
     const rt = $('#retry'); if (rt) rt.onclick = () => { s.status = 'queued'; FS.save(true).then(() => FS.Sync.run(true)); };
     const ru = $('#reup'); if (ru) ru.onclick = () => finish(s);
+    const rb = $('#rebuild'); if (rb) rb.onclick = async () => {
+      if (!confirm('Make the PDF and Excel again and replace them in Google Drive? Photos already in Drive are not sent again.')) return;
+      s.status = 'queued'; s.sync.queuedAt = Date.now(); s.sync.lastError = '';
+      await DB.put('surveys', s);
+      FS.toast(navigator.onLine ? 'Rebuilding the report…' : 'Saved to outbox. It will rebuild when you have signal.');
+      FS.updateNet(); route(); FS.Sync.run(true);
+    };
     const sv = $('#sendVid'); if (sv) sv.onclick = async () => {
       s.sync.holdVideos = false; s.status = 'queued'; s.sync.queuedAt = Date.now(); s.sync.lastError = '';
       await DB.put('surveys', s);

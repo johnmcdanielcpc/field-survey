@@ -40,6 +40,15 @@
     async get(store, key) { const db = await open(); return req(db.transaction(store).objectStore(store).get(key)); },
     async all(store) { const db = await open(); return req(db.transaction(store).objectStore(store).getAll()); },
     async put(store, val, key) { return tx(store, 'readwrite', s => { key === undefined ? s.put(val) : s.put(val, key); }); },
+    // change some fields of a stored record inside one transaction, so a photo's stored file is
+    // never written back from an old copy held in memory (iPhone can lose it that way)
+    async patch(store, key, fields) {
+      return tx(store, 'readwrite', s => new Promise((res, rej) => {
+        const g = s.get(key);
+        g.onsuccess = () => { const v = g.result; if (v) s.put(Object.assign(v, fields)); res(v); };
+        g.onerror = () => rej(g.error);
+      }));
+    },
     async del(store, key) { return tx(store, 'readwrite', s => { s.delete(key); }); },
     async photosFor(surveyId) {
       const db = await open();

@@ -91,11 +91,20 @@
           prog(`Adding photos to PDF… ${photoDone} of ${allPhotos}`);
           const rec = await FS.getPhoto(id);
           let img = null, why = '';
+          const px = plate ? 1600 : 1200, q = plate ? 0.8 : 0.75;
           try {
             const src = rec && await FS.displayBlob(rec);
-            if (src) img = await FS.scaleToBlob(src, plate ? 1600 : 1200, plate ? 0.8 : 0.75);
+            if (src) img = await FS.scaleToBlob(src, px, q);
             else why = 'photo file missing';
-          } catch (e) { console.warn(e); why = (e && e.message) || String(e); }
+          } catch (e) {
+            console.warn(e); why = (e && e.message) || String(e);
+            // the phone's copy could not be read: use the copy already uploaded to Drive
+            try {
+              const alt = rec && await FS.repairFromDrive(rec, FS.hasMarkup(rec) && !!rec.markedDriveId);
+              if (alt) { img = await FS.scaleToBlob(alt, px, q); why = ''; }
+            } catch (e2) { console.warn(e2); }
+          }
+          if (!img && opts.info) opts.info.missing = (opts.info.missing || 0) + 1;
           row.push({ id, rec, img, why, n: i + row.length + 1 });
         }
         const sizes = row.map(r => {

@@ -111,6 +111,19 @@
     return null;
   };
 
+  /* The phone's stored copy of a photo can become unreadable. Get the copy from Drive instead and
+     keep it on the phone so the photo works again. Returns the blob, or null. */
+  FS.repairFromDrive = async function (rec, marked) {
+    const id = marked ? rec.markedDriveId : rec.driveId;
+    if (!id || !FS.Sync) return null;
+    const b = await FS.Sync.download(id);
+    if (!b || !b.size) return null;
+    const fields = marked ? { marked: b } : { blob: b, fromDrive: true };
+    Object.assign(rec, fields);
+    await DB.patch('photos', rec.id, fields);
+    return b;
+  };
+
   /* What the report shows: the marked-up copy if there is one, else the original. */
   FS.hasMarkup = rec => !!(rec && (rec.marked || rec.markedDriveId));
   FS.displayBlob = async function (rec) {

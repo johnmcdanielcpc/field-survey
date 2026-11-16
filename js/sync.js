@@ -6,7 +6,7 @@
   const SINGLE_MAX = 6 * 1024 * 1024;     // larger files go up in chunks
   const CHUNK = 4 * 1024 * 1024;          // multiple of 256 KB (Drive requirement)
   const UPLOAD_PX = 2400;                 // long edge of the copy sent to Drive (data plates stay readable)
-  const PARALLEL = 3;                     // photos sent at the same time
+  const PARALLEL = 2;                     // photos sent at the same time
   let running = false, lastPaint = 0, wake = null;
 
   // Keep the screen on while uploading: iPhones pause the app when the screen locks.
@@ -17,10 +17,16 @@
   FS.uploadKeepsAwake = () => !!wake;
 
   // the copy that goes to Drive: originals stay full size on the phone and in the backup file
-  async function uploadCopy(blob) {
-    if (!blob || blob.size < 900 * 1024 || await DB.kvGet('fullSizeUpload', false)) return blob;
-    try { const r = await FS.scaleToBlob(blob, UPLOAD_PX, 0.85); return r.blob && r.blob.size < blob.size ? r.blob : blob; }
-    catch (e) { return blob; }
+  // one photo is shrunk at a time (keeps memory low on the phone)
+  let shrinkQ = Promise.resolve();
+  function uploadCopy(blob) {
+    const job = shrinkQ.then(async () => {
+      if (!blob || blob.size < 900 * 1024 || await DB.kvGet('fullSizeUpload', false)) return blob;
+      try { const r = await FS.scaleToBlob(blob, UPLOAD_PX, 0.85); return r.blob && r.blob.size < blob.size ? r.blob : blob; }
+      catch (e) { return blob; }
+    });
+    shrinkQ = job.catch(() => { });
+    return job;
   }
   const mins = ms => { const m = Math.round(ms / 60000); return m < 1 ? 'under a minute left' : `about ${m} min left`; };
 
@@ -129,12 +135,12 @@
         const blob = video ? r.blob : await uploadCopy(r.blob);
         r.driveId = await uploadBlob(blob, sy.photosFolderId, r.driveName, false, video
           ? (a, b) => { const rate = a / Math.max(1, Date.now() - vStart); sy.progress.label = `Uploading video ${FS.fmtBytes(a)} of ${FS.fmtBytes(b)} – ${mins((b - a) / Math.max(rate, 1e-6))}`; paint(s); } : null);
-        await DB.put('photos', r);
+        await DB.patch('photos', r.id, { driveId: r.driveId, driveName: r.driveName });
       }
       if (r.marked && !r.markedDriveId) {
         nameFor(r);
         r.markedDriveId = await uploadBlob(await uploadCopy(r.marked), sy.photosFolderId, r.driveName.replace(/\.jpg$/i, '') + ' (marked).jpg', true);
-        await DB.put('photos', r);
+        await DB.patch('photos', r.id, { markedDriveId: r.markedDriveId, driveName: r.driveName });
       }
       done++; if (!video) photosDone++;
       sy.progress = { done, total, label: video ? `Uploaded video (${done} of ${todo.length} files)` : photoLabel() };
@@ -150,7 +156,9 @@
 
     // 3. PDF with links to the originals
     sy.progress = { done, total, label: 'Building PDF report' }; await save(s); paint(s);
-    const pdf = await FS.buildPDF(s, { links: true, onProgress: t => { sy.progress.label = t; paint(s); } });
+    const pdfInfo = {};
+    const pdf = await FS.buildPDF(s, { links: true, info: pdfInfo, onProgress: t => { sy.progress.label = t; paint(s); } });
+    sy.pdfMissing = pdfInfo.missing || 0;
     sy.progress = { done, total, label: `Uploading PDF (${FS.fmtBytes(pdf.size)})` }; paint(s);
     sy.pdfId = await uploadBlob(pdf, sy.folderId, FS.fileBase(s) + '.pdf', true, (a, b) => { sy.progress.label = `Uploading PDF ${Math.round(100 * a / b)}%`; paint(s); });
     done++;
@@ -175,7 +183,7 @@
     sy.progress = null;
     await save(s);
     lastPaint = 0; paint(s);
-    FS.toast(`✓ ${FS.surveyTitle(s)} uploaded to Google Drive${sy.videosWaiting ? ` — ${sy.videosWaiting} video${sy.videosWaiting > 1 ? 's' : ''} still to send on Wi-Fi` : ''}`, 5000);
+    FS.toast(`✓ ${FS.surveyTitle(s)} uploaded to Google Drive${sy.pdfMissing ? ` — ${sy.pdfMissing} photo${sy.pdfMissing > 1 ? 's' : ''} could not be put in the PDF (they are in the Photos folder)` : ''}${sy.videosWaiting ? ` — ${sy.videosWaiting} video${sy.videosWaiting > 1 ? 's' : ''} still to send on Wi-Fi` : ''}`, 5000);
   }
 
   async function run(force) {
