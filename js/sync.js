@@ -5,7 +5,24 @@
   const FS = window.FS, DB = FS.DB;
   const SINGLE_MAX = 6 * 1024 * 1024;     // larger files go up in chunks
   const CHUNK = 4 * 1024 * 1024;          // multiple of 256 KB (Drive requirement)
-  let running = false, lastPaint = 0;
+  const UPLOAD_PX = 2400;                 // long edge of the copy sent to Drive (data plates stay readable)
+  const PARALLEL = 3;                     // photos sent at the same time
+  let running = false, lastPaint = 0, wake = null;
+
+  // Keep the screen on while uploading: iPhones pause the app when the screen locks.
+  async function keepAwake() {
+    try { if (!wake && navigator.wakeLock && document.visibilityState === 'visible') { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } } catch (e) { wake = null; }
+  }
+  function letSleep() { try { if (wake) wake.release(); } catch (e) { } wake = null; }
+  FS.uploadKeepsAwake = () => !!wake;
+
+  // the copy that goes to Drive: originals stay full size on the phone and in the backup file
+  async function uploadCopy(blob) {
+    if (!blob || blob.size < 900 * 1024 || await DB.kvGet('fullSizeUpload', false)) return blob;
+    try { const r = await FS.scaleToBlob(blob, UPLOAD_PX, 0.85); return r.blob && r.blob.size < blob.size ? r.blob : blob; }
+    catch (e) { return blob; }
+  }
+  const mins = ms => { const m = Math.round(ms / 60000); return m < 1 ? 'under a minute left' : `about ${m} min left`; };
 
   const b64 = blob => new Promise((res, rej) => {
     const r = new FileReader();
@@ -87,28 +104,49 @@
     const held = r => sy.holdVideos && r.kind === 'video';
     const todo = recs.filter(r => (!r.driveId && r.blob && !held(r)) || (r.marked && !r.markedDriveId));
     const total = todo.length + 3;
-    let done = 0;
-    sy.progress = { done, total, label: 'Uploading photos' };
-    for (const r of todo) {
+    let done = 0, photosDone = 0;
+    const photoQ = todo.filter(r => r.kind !== 'video'), vidQ = todo.filter(r => r.kind === 'video');
+    const t0 = Date.now();
+    const photoLabel = () => {
+      const left = photoQ.length - photosDone;
+      const eta = photosDone >= 3 && left > 0 ? ` – ${mins((Date.now() - t0) / photosDone * left)}` : '';
+      return `Uploading photos (${photosDone} of ${photoQ.length})${eta}`;
+    };
+    sy.progress = { done, total, label: photoQ.length ? photoLabel() : 'Uploading' };
+    const nameFor = r => {
+      if (r.driveName) return;
+      const c = ctx[r.id] || { base: 'Photo', n: 1 };
+      const ext = FS.mediaExt(r);
+      let name = FS.safeName(`${c.base} – ${c.n}`) + ext, k = 2;
+      while (used.has(name)) name = FS.safeName(`${c.base} – ${c.n} (${k++})`) + ext;
+      used.add(name); r.driveName = name;
+    };
+    async function one(r) {
+      const video = r.kind === 'video';
       if (!r.driveId) {
-        if (!r.driveName) {
-          const c = ctx[r.id] || { base: 'Photo', n: 1 };
-          const ext = FS.mediaExt(r);
-          let name = FS.safeName(`${c.base} – ${c.n}`) + ext, k = 2;
-          while (used.has(name)) name = FS.safeName(`${c.base} – ${c.n} (${k++})`) + ext;
-          used.add(name); r.driveName = name;
-        }
-        r.driveId = await uploadBlob(r.blob, sy.photosFolderId, r.driveName, false, r.kind === 'video'
-          ? (a, b) => { sy.progress.label = `Uploading video ${FS.fmtBytes(a)} of ${FS.fmtBytes(b)}`; paint(s); } : null);
+        nameFor(r);
+        const vStart = Date.now();
+        const blob = video ? r.blob : await uploadCopy(r.blob);
+        r.driveId = await uploadBlob(blob, sy.photosFolderId, r.driveName, false, video
+          ? (a, b) => { const rate = a / Math.max(1, Date.now() - vStart); sy.progress.label = `Uploading video ${FS.fmtBytes(a)} of ${FS.fmtBytes(b)} – ${mins((b - a) / Math.max(rate, 1e-6))}`; paint(s); } : null);
         await DB.put('photos', r);
       }
       if (r.marked && !r.markedDriveId) {
-        r.markedDriveId = await uploadBlob(r.marked, sy.photosFolderId, r.driveName.replace(/\.jpg$/i, '') + ' (marked).jpg', true);
+        nameFor(r);
+        r.markedDriveId = await uploadBlob(await uploadCopy(r.marked), sy.photosFolderId, r.driveName.replace(/\.jpg$/i, '') + ' (marked).jpg', true);
         await DB.put('photos', r);
       }
-      done++; sy.progress = { done, total, label: `Uploading photos & video (${done} of ${todo.length})` };
+      done++; if (!video) photosDone++;
+      sy.progress = { done, total, label: video ? `Uploaded video (${done} of ${todo.length} files)` : photoLabel() };
       await save(s); paint(s);
     }
+    // photos: several at a time
+    let next = 0, failed = null;
+    const worker = async () => { while (!failed && next < photoQ.length) { const r = photoQ[next++]; try { await one(r); } catch (e) { failed = failed || e; } } };
+    await Promise.all(Array.from({ length: Math.min(PARALLEL, photoQ.length) }, worker));
+    if (failed) throw failed;
+    // videos: one at a time (each already goes up in pieces)
+    for (const r of vidQ) await one(r);
 
     // 3. PDF with links to the originals
     sy.progress = { done, total, label: 'Building PDF report' }; await save(s); paint(s);
@@ -143,10 +181,12 @@
   async function run(force) {
     if (running) return;
     running = true;
+    let woke = false;
     try {
       const all = await DB.all('surveys');
       const q = all.filter(s => s.status === 'queued' || s.status === 'uploading' || (force && s.status === 'error'))
         .sort((a, b) => (a.sync.queuedAt || 0) - (b.sync.queuedAt || 0));
+      if (q.length) { await keepAwake(); woke = true; }
       for (const s0 of q) {
         try { await uploadSurvey(s0.id); }
         catch (e) {
@@ -160,7 +200,7 @@
           if (e instanceof NetError) break;   // no point trying the others
         }
       }
-    } finally { running = false; FS.updateNet(); }
+    } finally { running = false; if (woke) letSleep(); FS.updateNet(); }
   }
 
   async function list() {
@@ -196,11 +236,11 @@
     return fromB64(r.b64, r.mimeType || 'image/png');
   }
 
-  FS.Sync = { call, run, list, importSurvey, download, thumb };
+  FS.Sync = { call, run, list, importSurvey, download, thumb, isRunning: () => running };
 
   // keep trying while anything is waiting
   window.addEventListener('online', () => run());
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) run(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (running) keepAwake(); run(); } });
   setInterval(async () => {
     if (!navigator.onLine || running) return;
     const all = await DB.all('surveys');

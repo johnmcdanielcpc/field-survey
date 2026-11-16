@@ -45,6 +45,7 @@
     names: await DB.kvGet('names', FS.DEFAULT_NAMES),
     me: await DB.kvGet('me', ''),
     saveRoll: await FS.rollSetting(),
+    fullSize: !!(await DB.kvGet('fullSizeUpload', false)),
   });
 
   function setHeader(title, back) {
@@ -192,7 +193,8 @@
       const p = sy.progress;
       banner = `<div class="banner warn"><b>${s.status === 'uploading' ? 'Uploading' : 'Waiting to upload'}</b>${p ? ` – ${esc(p.label || '')} (${p.done} of ${p.total})` : ''}
         ${p ? `<div class="progress"><i style="width:${Math.round(100 * p.done / p.total)}%"></i></div>` : ''}
-        ${!navigator.onLine ? '<div>No signal. Keep the app open once you have signal and it will finish.</div>' : ''}</div>`;
+        ${!navigator.onLine ? '<div>No signal. Keep the app open once you have signal and it will finish.</div>'
+          : s.status === 'uploading' ? `<div style="margin-top:6px"><b>Keep the app open until this finishes.</b> ${FS.uploadKeepsAwake && FS.uploadKeepsAwake() ? 'The screen will stay on by itself.' : "Don't lock the phone or switch apps"} – if it's paused, it picks up where it left off when you come back. Plugging in the charger helps.</div>` : ''}</div>`;
     } else if (s.status === 'error') {
       banner = `<div class="banner bad"><b>Upload problem:</b> ${esc(sy.lastError || '')}<br><button class="btn" id="retry" style="margin-top:8px">Try again</button></div>`;
     } else if (s.status === 'uploaded') {
@@ -762,6 +764,11 @@
         <div id="testOut" class="muted" style="margin-top:8px"></div>
       </div>
       <div class="card">
+        <div class="flabel">Photo size in Google Drive</div>
+        <label class="checkrow"><input type="checkbox" id="fullSet" ${st.fullSize ? 'checked' : ''}> Upload full-size photos (much slower)</label>
+        <p class="muted" style="margin:6px 0 0">Normally photos are sent to Drive at a smaller size (2400 pixels on the long side) so uploads are several times faster; data plates stay readable. The full-size originals always stay on this phone and in the backup file. Videos are always sent as they are.</p>
+      </div>
+      <div class="card">
         <div class="flabel">iPhone Photos app</div>
         <label class="checkrow"><input type="checkbox" id="rollSet" ${st.saveRoll ? 'checked' : ''}> Offer to save survey photos &amp; videos to the Photos app</label>
         <p class="muted" style="margin:6px 0 0">An extra backup copy. A "Save to Photos" button shows under photos that aren't saved yet; tap it, then tap Save Image. Photos picked from the Library are already in Photos and are skipped. Plug the phone into a Windows laptop with a cable and the laptop can copy them off.</p>
@@ -774,6 +781,7 @@
       <div class="card"><div class="flabel">Storage</div><div class="muted">${esc(est)}</div>
         <div class="muted" style="margin-top:6px">App version ${esc(FS.VERSION)}</div>
         <button class="btn block" id="upd" style="margin-top:8px">Check for app update</button></div>`;
+    $('#fullSet').onchange = async e => { await DB.kvSet('fullSizeUpload', e.target.checked); FS.toast(e.target.checked ? 'Full-size photos will be uploaded' : 'Smaller photos will be uploaded (faster)'); };
     $('#rollSet').onchange = async e => { await DB.kvSet('saveToPhotos', e.target.checked); FS.toast(e.target.checked ? 'Save to Photos is on' : 'Save to Photos is off'); };
     $('#applySetup').onclick = async () => {
       const v = $('#setupPaste').value.trim();
