@@ -40,7 +40,16 @@
       FS.sortedItems(def, survey.values[secId][def.id]).forEach(({ it, i }) => {
         const route = `${secId}/${def.id}/${it._id}`;
         const firstPlate = (it.dataPlate || it.photo || it.sides || [])[0];
-        units.push({ kind, it, route, tag: FS.itemLabel(def, it, i), def, photo: firstPlate && photoDrive[firstPlate] ? driveUrl(photoDrive[firstPlate]) : survey.sync.folderUrl || '' });
+        const tag = FS.itemLabel(def, it, i);
+        units.push({ kind, it, route, tag, def, photo: firstPlate && photoDrive[firstPlate] ? driveUrl(photoDrive[firstPlate]) : survey.sync.folderUrl || '' });
+        // outdoor condensing units listed inside a split-system air handler: their own rows, tied to the air handler
+        const cdef = kind === 'ahu' && def.fields.find(f => f.id === 'cus');
+        if (cdef) FS.sortedItems(cdef, it.cus).forEach(({ it: cu, i: j }) => {
+          const pic = (cu.dataPlate || cu.sides || [])[0];
+          units.push({ kind: 'cu', it: cu, route: `${route}/cus/${cu._id}`, tag: FS.itemLabel(cdef, cu, j), def: cdef, parent: tag,
+            service: `Condensing unit for ${tag}${it.area ? ' (' + it.area + ')' : ''}`,
+            photo: pic && photoDrive[pic] ? driveUrl(photoDrive[pic]) : survey.sync.folderUrl || '' });
+        });
       });
     }
     const meta = (u, f) => survey.meta[FS.metaKey(u.route, f)];
@@ -50,6 +59,14 @@
     function noteFor(u) {
       const it = u.it, out = [];
       if (u.it.category === 'Not sure') out.push('CATEGORY NOT SURE - VERIFY');
+      if (u.kind === 'cu') {
+        if (it.location) out.push('Location: ' + it.location);
+        if (it.mounting) out.push('Mounted on ' + it.mounting.toLowerCase());
+        if (it.compressors) out.push(it.compressors + ' compressor(s)');
+        if (it.heatPump === 'Yes') out.push('Heat pump');
+        if (it.coil) out.push('Condenser coil ' + it.coil);
+        if (it.lineSet) out.push('Line set ' + it.lineSet);
+      }
       if (it.heatOnly) out.push('Heat only');
       if (it.reclaim && !/none/i.test(it.reclaim)) out.push('Heat reclaim: ' + it.reclaim);
       if (it.running === 'No') out.push('Not running');
@@ -129,7 +146,7 @@
     let r = 4;
     for (const u of units.filter(u => u.it.category === 'Replace' || u.it.category === 'Not sure')) {
       const it = u.it, ns = it.category === 'Not sure';
-      rep.getCell(r, 1).value = u.tag; rep.getCell(r, 2).value = it.area || '';
+      rep.getCell(r, 1).value = u.tag; rep.getCell(r, 2).value = u.service || it.area || '';
       paint(rep, r, 3, u, 'mfr', it.mfr || ''); paint(rep, r, 4, u, 'model', it.model || ''); paint(rep, r, 5, u, 'serial', it.serial || '');
       if (/^Gas/.test(it.heatType || '')) { paint(rep, r, 6, u, 'btuIn', mbh(it.btuIn)); paint(rep, r, 7, u, 'btuOut', mbh(it.btuOut)); }
       paint(rep, r, 9, u, 'mfgDate', it.mfgDate || ''); paint(rep, r, 10, u, 'refrigerant', it.refrigerant || '');
@@ -153,7 +170,7 @@
       header2(ws, [{ col: 1, top: 'TAG' }, { col: 2, top: 'Service' }, { col: 3, top: 'Existing', span: 3, sub: ['Manufacturer', 'Model', 'Serial'] }, { col: 6, top: 'Notes' }, { col: 7, top: 'Data Plate' }]);
       let rr = 4;
       for (const u of units.filter(filter)) {
-        ws.getCell(rr, 1).value = u.tag; ws.getCell(rr, 2).value = u.it.area || '';
+        ws.getCell(rr, 1).value = u.tag; ws.getCell(rr, 2).value = u.service || u.it.area || '';
         paint(ws, rr, 3, u, 'mfr', u.it.mfr || ''); paint(ws, rr, 4, u, 'model', u.it.model || ''); paint(ws, rr, 5, u, 'serial', u.it.serial || '');
         ws.getCell(rr, 6).value = noteFor(u); ws.getCell(rr, 7).value = link(u.photo);
         rowBorders(ws, rr, 7, false); rr++;
@@ -193,7 +210,11 @@
     const abRows = [];
     const rtuNote = u => {
       const it = u.it, p = [];
-      if (u.kind === 'ahu') p.push('Split system air handler' + (it.location ? ' – located ' + it.location : ''));
+      if (u.kind === 'ahu') {
+        p.push('Split system air handler' + (it.location ? ' – located ' + it.location : ''));
+        const cus = units.filter(x => x.kind === 'cu' && x.parent === u.tag).map(x => x.tag);
+        p.push(cus.length ? 'Condensing unit(s): ' + cus.join(', ') : 'NO CONDENSING UNIT ENTERED');
+      }
       if (it.mfr) p.push('Mfr: ' + it.mfr);
       if (it.model) p.push('Model: ' + it.model);
       if (it.serial) p.push('Serial: ' + it.serial);
