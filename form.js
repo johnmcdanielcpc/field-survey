@@ -53,7 +53,7 @@ const RACKS = v => ((v.machine || {}).rooms || []).flatMap(r => (r.racks || []).
 
 window.SURVEY_FORM = {
   id: 'equipment-replacement-survey',
-  version: 5,
+  version: 6,
   title: 'Equipment Replacement Field Survey',
   sections: [
     {
@@ -172,6 +172,42 @@ window.SURVEY_FORM = {
       ]
     },
     {
+      id: 'ahus', title: 'Split System Air Handlers', fields: [
+        { id: 'units', type: 'repeat', itemName: 'Air Handler', addLabel: 'Add air handler', labelField: 'tag', labelPrefix: 'AHU-', kind: 'ahu', fields: [
+          { id: 'tag', label: 'Split System Air Handler', type: 'text', hint: 'AHU-1, AH-2…' },
+          { id: 'area', label: 'Area Served', type: 'text', suggest: ['Sales Area', 'Produce', 'Bakery', 'Deli', 'Prepared foods', 'Offices', 'Break room', 'Back room'] },
+          { id: 'location', label: 'Air Handler Location', type: 'text', suggest: ['Mezzanine', 'Mechanical room', 'Back room', 'Above ceiling', 'Roof'] },
+          CATEGORY,
+          { id: 'mfr', label: 'Manufacturer', type: 'text', suggest: ['Addison', 'Trane', 'Carrier', 'York', 'Daikin', 'AAON', 'Lennox', 'Mitsubishi'] },
+          { id: 'model', label: 'Model Number', type: 'text' },
+          { id: 'serial', label: 'Serial Number', type: 'text' },
+          { id: 'dataPlate', label: 'Data Plate', type: 'photo', expect: true, plate: true },
+          { id: 'mfgDate', label: 'Mfg Date (MM/YYYY)', type: 'text', format: 'mmyyyy', hint: 'MM/YYYY (or just the year)' },
+          { id: 'voltage', label: 'Voltage / Phase', type: 'choice', options: VOLTS },
+          { ...PANEL, options: ['Not Identified'], initial: 'Not Identified', missingIf: ['Not Identified'] },
+          BREAKER,
+          { id: 'controls', label: 'Controls Manufacturer', type: 'text', suggest: ['Danfoss', 'Copeland E3', 'CPC / Emerson', 'Novar', 'T-Stat', 'Unit controller'] },
+          { id: 'vfd', label: 'VFD Present', type: 'yesno' },
+          { id: 'smokeLoc', label: 'Smoke Detector', type: 'choice', options: ['In Unit', 'In Duct', 'None'] },
+          { id: 'refrigerant', label: 'Refrigerant Type', type: 'choice', options: ['R-22', 'R-407C', 'R-410A', 'R-422B', 'R-454B', 'R-32'] },
+          { id: 'reclaim', label: 'Heat Reclaim (racks / circuits)', type: 'multi', options: ['None Present', 'Rack A', 'Rack B', 'Rack C', 'Rack D', 'Rack E'], optionsFrom: RACKS },
+          { id: 'heatType', label: 'Type of Heat', type: 'choice', options: ['Gas', 'Electric', 'Hot Water', 'None'] },
+          { id: 'btuIn', label: 'Heating BTU Input', type: 'number', showIf: { field: 'heatType', in: ['Gas'] } },
+          { id: 'btuOut', label: 'Heating BTU Output', type: 'number', showIf: { field: 'heatType', in: ['Gas'] } },
+          { id: 'kw', label: 'Electric Heat (kW)', type: 'number', showIf: { field: 'heatType', in: ['Electric'] } },
+          { id: 'oa', label: 'Outside Air', type: 'choice', options: ['Yes', 'Yes, but closed', 'Economizer', 'No'] },
+          { id: 'condition', label: 'Overall Condition of Unit', type: 'choice', options: COND },
+          { id: 'notes', label: 'Additional Notes', type: 'textarea', optional: true },
+          { id: 'sides', label: 'Air Handler', type: 'photo', expect: true },
+          { id: 'other', label: 'Other', type: 'photo' },
+          { id: 'tons', label: 'Nominal Tons', type: 'number', lookup: true },
+          { id: 'supplyCfm', label: 'Supply CFM', type: 'number', lookup: true },
+          { id: 'oaCfm', label: 'Outside Air CFM', type: 'number', lookup: true },
+          { id: 'weight', label: 'Unit Weight (lbs)', type: 'number', lookup: true },
+        ]}
+      ]
+    },
+    {
       id: 'hoods', title: 'Hoods', fields: [
         { id: 'units', type: 'repeat', itemName: 'Hood', addLabel: 'Add hood', labelField: 'tag', labelPrefix: 'Hood ', kind: 'hood', fields: [
           { id: 'tag', label: 'Unit Label', type: 'text' },
@@ -188,9 +224,9 @@ window.SURVEY_FORM = {
           { id: 'exhaustOnly', label: 'Exhaust Only Hood', type: 'yesno' },
           { id: 'efs', label: 'Exhaust Fan(s) for this Hood', type: 'multi', options: [], optionsFrom: tagsIn('efs', 'Exhaust Fan'),
             emptyHint: 'No exhaust fans entered yet. Add them under Exhaust Fans and they will show here, or tap Other… to type the tag.' },
-          { id: 'maus', label: 'Makeup Air for this Hood (MAUs / RTUs)', type: 'multi', options: [], optionsFrom: v => [...tagsIn('maus', 'MAU')(v), ...tagsIn('rtus', 'Unit')(v)],
+          { id: 'maus', label: 'Makeup Air for this Hood (MAUs / RTUs / AHUs)', type: 'multi', options: [], optionsFrom: v => [...tagsIn('maus', 'MAU')(v), ...tagsIn('rtus', 'Unit')(v), ...tagsIn('ahus', 'Air Handler')(v)],
             hideIf: { field: 'exhaustOnly', in: ['Yes'] },
-            emptyHint: 'No MAUs or RTUs entered yet. Add them under Make-Up Air Units or RTUs and they will show here, or tap Other… to type the tag.' },
+            emptyHint: 'No MAUs, RTUs or air handlers entered yet. Add them in those sections and they will show here, or tap Other… to type the tag.' },
           { id: 'notes', label: 'Additional Notes', type: 'textarea', optional: true },
           { id: 'photo', label: 'Picture of Hood', type: 'photo', expect: true },
         ]}
