@@ -34,7 +34,7 @@
     const units = [];
     const photoDrive = {};
     for (const rec of await FS.DB.photosFor(survey.id)) photoDrive[rec.id] = rec.driveId;
-    const kinds = [['rtus', 'rtu'], ['efs', 'ef'], ['maus', 'mau'], ['hoods', 'hood']];
+    const kinds = [['rtus', 'rtu'], ['ahus', 'ahu'], ['efs', 'ef'], ['maus', 'mau'], ['hoods', 'hood']];
     for (const [secId, kind] of kinds) {
       const sec = FS.section(secId), def = sec.fields[0];
       FS.sortedItems(def, survey.values[secId][def.id]).forEach(({ it, i }) => {
@@ -193,6 +193,7 @@
     const abRows = [];
     const rtuNote = u => {
       const it = u.it, p = [];
+      if (u.kind === 'ahu') p.push('Split system air handler' + (it.location ? ' – located ' + it.location : ''));
       if (it.mfr) p.push('Mfr: ' + it.mfr);
       if (it.model) p.push('Model: ' + it.model);
       if (it.serial) p.push('Serial: ' + it.serial);
@@ -257,7 +258,7 @@
     };
     const efs = units.filter(u => u.kind === 'ef' && inAB(u));
     const maus = units.filter(u => u.kind === 'mau' && inAB(u));
-    const rtus = units.filter(u => u.kind === 'rtu' && inAB(u));
+    const rtus = units.filter(u => (u.kind === 'rtu' || u.kind === 'ahu') && inAB(u));
     const hoods = units.filter(u => u.kind === 'hood' && inAB(u));
     const placed = new Map();                       // fan unit -> hood it is listed under
     const key = t => String(t || '').trim().toUpperCase();
@@ -271,7 +272,7 @@
       }
       return { h, rows };
     });
-    for (const u of rtus) if (!placed.has(u)) abRows.push({ u, type: 'rtu' });
+    for (const u of rtus) if (!placed.has(u)) abRows.push({ u, type: u.kind });
     for (const u of maus) if (!placed.has(u)) abRows.push({ u, type: 'mau' });
     for (const g of groups) { abRows.push({ u: g.h, type: 'hood' }); abRows.push(...g.rows); }
     for (const e of efs) if (!placed.has(e)) abRows.push({ u: e, type: 'ef' });
@@ -280,7 +281,7 @@
       const u = row.u, it = u.it, ns = it.category === 'Not sure';
       ab.getCell(ar, 1).value = row.hood ? '   ' + u.tag : u.tag;
       const hoodPre = row.hood ? `FOR ${row.hood.tag.toUpperCase()}${u.alsoHoods ? ' (ALSO SERVES ' + u.alsoHoods.join(', ').toUpperCase() + ')' : ''}. ` : '';
-      if (row.type === 'rtu') {
+      if (row.type === 'rtu' || row.type === 'ahu') {
         paint(ab, ar, 2, u, 'supplyCfm', num(it.supplyCfm));
         paint(ab, ar, 3, u, 'oaCfm', num(it.oaCfm));
         const tons = num(it.tons);
@@ -317,7 +318,7 @@
     const abNotes = [
       'NO MECH. PLANS; TONNAGE AND CFM VALUES ARE ESTIMATED WHERE NOT SHOWN ON DATA PLATE.',
       'VALUES SHADED BLUE ARE FROM MANUFACTURER LOOK-UP BY MODEL/SERIAL AND ARE PENDING REVIEW (SEE LOOK-UP REVIEW TAB).',
-      'EXHAUST SHOWN AS NEGATIVE. MAKEUP COLUMN = RTU OUTSIDE AIR CFM, AND MAU SUPPLY CFM (100% OUTSIDE AIR).',
+      'EXHAUST SHOWN AS NEGATIVE. MAKEUP COLUMN = RTU / AIR HANDLER OUTSIDE AIR CFM, AND MAU SUPPLY CFM (100% OUTSIDE AIR).',
       'EACH HOOD (GRAY ROW) IS FOLLOWED BY ITS EXHAUST FAN(S) AND MAKEUP AIR UNIT(S); HOOD CFM IS CARRIED BY THOSE FANS.',
       'SPACE PRESSURIZATION = MAKEUP + EXHAUST (SUPPLY AIR IS RECIRCULATED AND NOT INCLUDED).',
       'EQUIPMENT MARKED REMOVE & CAP IS NOT INCLUDED. ROWS SHADED YELLOW ARE "NOT SURE" - VERIFY.',

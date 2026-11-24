@@ -2,7 +2,8 @@
 (function () {
   const FS = window.FS, DB = FS.DB, F = window.SURVEY_FORM, esc = FS.esc;
   const $ = (s, el = document) => el.querySelector(s);
-  FS.DEFAULT_NAMES = ['John McDaniel', 'Johnny McDaniel', 'Other Guy'];
+  FS.DEFAULT_NAMES = ['John McDaniel', 'Gregg Jones', 'Scott Ahrens', 'Billy McCollough', 'John Smith', 'Jeff Ollis', 'Pete Stevens', 'Cory Watson'];
+  FS.NAMES_VER = 2;   // bump to push a new DEFAULT_NAMES list onto phones that already have one saved
   const view = $('#view'), bottom = $('#bottom');
   FS.cur = null;            // survey currently open
   let saveTimer = null;
@@ -40,13 +41,15 @@
     document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 30000);
   };
 
-  FS.settings = async () => ({
+  FS.settings = async () => {
+    if ((await DB.kvGet('namesVer', 1)) < FS.NAMES_VER) { await DB.kvSet('names', FS.DEFAULT_NAMES.slice()); await DB.kvSet('namesVer', FS.NAMES_VER); }
+    return {
     url: await DB.kvGet('uploadUrl', ''), key: await DB.kvGet('uploadKey', ''),
     names: await DB.kvGet('names', FS.DEFAULT_NAMES),
     me: await DB.kvGet('me', ''),
     saveRoll: await FS.rollSetting(),
     fullSize: !!(await DB.kvGet('fullSizeUpload', false)),
-  });
+  }; };
 
   function setHeader(title, back) {
     $('#title').textContent = title;
@@ -833,7 +836,7 @@
     if (!cfg.url || !cfg.key) throw new Error('link is missing the upload settings');
     await DB.kvSet('uploadUrl', cfg.url);
     await DB.kvSet('uploadKey', cfg.key);
-    if (cfg.names) { const names = await DB.kvGet('names', FS.DEFAULT_NAMES); for (const n of cfg.names) if (!names.includes(n)) names.push(n); await DB.kvSet('names', names); }
+    if (cfg.names) { await FS.settings(); const names = await DB.kvGet('names', FS.DEFAULT_NAMES); for (const n of cfg.names) if (!names.includes(n) && !['Johnny McDaniel', 'Other Guy'].includes(n)) names.push(n); await DB.kvSet('names', names); }
   }
   async function applySetupLink(b64) {
     try { await saveSetup(b64); FS.toast('✓ Upload settings saved on this device', 4000); }
